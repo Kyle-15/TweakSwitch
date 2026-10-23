@@ -3,7 +3,7 @@
 	"id": "tweakswitch",
 	"version": "${version}",
 	"name": "TweakSwitch",
-	"description": "On/off switches for resource packs you drop into the tweakswitch/packs folder.",
+	"description": "On/off switches for resource packs, with in-game downloads from Vanilla Tweaks and Modrinth, previews, and updates.",
 	"authors": [
 		"kyle"
 	],
