@@ -150,8 +150,8 @@ public class VanillaTweaksScreen extends DownloadScreen<VanillaTweaks.VtPack> {
 	}
 
 	@Override
-	protected String switchCategory(final VanillaTweaks.VtPack pack) {
-		return pack.category();
+	protected PackIndex.Entry indexEntry(final VanillaTweaks.VtPack pack) {
+		return new PackIndex.Entry(pack.category(), PackIndex.VANILLA_TWEAKS, pack.id());
 	}
 
 	@Override
@@ -171,6 +171,9 @@ public class VanillaTweaksScreen extends DownloadScreen<VanillaTweaks.VtPack> {
 				text.append("\n");
 			}
 			text.append(Component.translatable("tweakswitch.vt.conflicts", String.join(", ", conflicts) + more).withStyle(ChatFormatting.GOLD));
+		}
+		if (pack.warning() != null) {
+			text.append(Component.literal("\n⚠ " + pack.warning()).withStyle(ChatFormatting.YELLOW));
 		}
 		return text;
 	}

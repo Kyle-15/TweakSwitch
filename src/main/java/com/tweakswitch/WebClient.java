@@ -6,6 +6,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 
 /** One HTTP client for every site TweakSwitch talks to, so they all see the same User-Agent. Calls block. */
@@ -31,12 +32,18 @@ public final class WebClient {
 		return send(request(uri).header("Content-Type", "application/x-www-form-urlencoded").POST(HttpRequest.BodyPublishers.ofString(form)), HttpResponse.BodyHandlers.ofString());
 	}
 
+	public static String postJson(final URI uri, final String json) throws IOException, InterruptedException {
+		return send(request(uri).header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(json)), HttpResponse.BodyHandlers.ofString());
+	}
+
 	public static byte[] getBytes(final URI uri) throws IOException, InterruptedException {
 		return send(request(uri).GET(), HttpResponse.BodyHandlers.ofByteArray());
 	}
 
+	/** Saves the response to {@code file}, replacing anything already there. */
 	public static void download(final URI uri, final Path file) throws IOException, InterruptedException {
-		send(request(uri).GET(), HttpResponse.BodyHandlers.ofFile(file));
+		// ofFile(file) alone doesn't truncate, which would leave the tail of a longer old file behind
+		send(request(uri).GET(), HttpResponse.BodyHandlers.ofFile(file, StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING));
 	}
 
 	private static <T> T send(final HttpRequest.Builder request, final HttpResponse.BodyHandler<T> handler) throws IOException, InterruptedException {

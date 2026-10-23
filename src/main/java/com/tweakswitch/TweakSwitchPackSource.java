@@ -35,6 +35,11 @@ public class TweakSwitchPackSource implements RepositorySource {
 		return pack.getId().startsWith(ID_PREFIX);
 	}
 
+	/** The pack id for a file in the packs folder. */
+	public static String idFor(final String fileName) {
+		return ID_PREFIX + fileName;
+	}
+
 	/** The pack's file name in the packs folder, e.g. "VT - Steve Zombies.zip". */
 	public static String fileName(final Pack pack) {
 		return pack.getId().substring(ID_PREFIX.length());

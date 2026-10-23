@@ -3,9 +3,13 @@ package com.tweakswitch;
 import com.mojang.logging.LogUtils;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.CycleButton;
@@ -181,8 +185,8 @@ public class ModrinthScreen extends DownloadScreen<Modrinth.Project> {
 	}
 
 	@Override
-	protected String switchCategory(final Modrinth.Project project) {
-		return "Modrinth";
+	protected PackIndex.Entry indexEntry(final Modrinth.Project project) {
+		return new PackIndex.Entry("Modrinth", PackIndex.MODRINTH, project.id());
 	}
 
 	@Override
@@ -197,7 +201,73 @@ public class ModrinthScreen extends DownloadScreen<Modrinth.Project> {
 		if (!project.categories().isEmpty()) {
 			text.append(Component.literal("\n" + String.join(", ", project.categories())).withStyle(ChatFormatting.DARK_AQUA));
 		}
+
+		// Looked up in the background the first time the pack is hovered
+		Modrinth.Requirements requirements = Modrinth.cachedRequirements(project);
+		if (requirements != null) {
+			List<Modrinth.LinkedProject> mods = requirements.required().stream().filter(linked -> !linked.isResourcePack()).toList();
+			if (!mods.isEmpty()) {
+				String names = String.join(", ", mods.stream().map(mod -> mod.title() + (mod.isInstalled() ? " ✔" : "")).toList());
+				boolean allInstalled = requirements.missingMods().isEmpty();
+				text.append(Component.literal("\n").append(Component.translatable(allInstalled ? "tweakswitch.mr.needsModsInstalled" : "tweakswitch.mr.needsMods", names)
+					.withStyle(allInstalled ? ChatFormatting.GREEN : ChatFormatting.GOLD)));
+			}
+			if (!requirements.requiredPacks().isEmpty()) {
+				String names = String.join(", ", requirements.requiredPacks().stream().map(Modrinth.LinkedProject::title).toList());
+				text.append(Component.literal("\n").append(Component.translatable("tweakswitch.mr.needsPacks", names).withStyle(ChatFormatting.YELLOW)));
+			}
+			if (!requirements.optional().isEmpty()) {
+				String names = String.join(", ", requirements.optional().stream().limit(4).map(Modrinth.LinkedProject::title).toList());
+				String more = requirements.optional().size() > 4 ? ", …" : "";
+				text.append(Component.literal("\n").append(Component.translatable("tweakswitch.mr.worksWith", names + more).withStyle(ChatFormatting.GRAY)));
+			}
+		}
 		return text;
+	}
+
+	/**
+	 * Looks up what each pack needs: required resource packs are added to the batch, and if any mods are missing the
+	 * player sees {@link ModsNeededScreen} with links before anything downloads.
+	 */
+	@Override
+	protected void beforeDownload(final List<Modrinth.Project> queue, final Consumer<List<Modrinth.Project>> proceed) {
+		this.setProgress(Component.translatable("tweakswitch.mr.checking").getString());
+		Set<String> files = this.downloadedFiles();
+		Thread thread = new Thread(() -> {
+			List<Modrinth.Project> batch = new ArrayList<>(queue);
+			Map<String, List<Modrinth.LinkedProject>> missing = new LinkedHashMap<>();
+			Set<String> queued = new HashSet<>();
+			queue.forEach(project -> queued.add(project.id()));
+			// Index loop: required packs added here are checked too
+			for (int i = 0; i < batch.size(); i++) {
+				Modrinth.Project project = batch.get(i);
+				try {
+					Modrinth.Requirements requirements = Modrinth.requirements(project);
+					if (!requirements.missingMods().isEmpty()) {
+						missing.put(project.title(), requirements.missingMods());
+					}
+					for (Modrinth.LinkedProject pack : requirements.requiredPacks()) {
+						Modrinth.Project dependency = Modrinth.projectFor(pack);
+						if (queued.add(pack.id()) && !files.contains(dependency.fileName())) {
+							batch.add(dependency);
+						}
+					}
+				} catch (Exception e) {
+					LOGGER.warn("Couldn't check what {} needs", project.title(), e);
+				}
+			}
+
+			this.minecraft.execute(() -> {
+				this.setProgress(null);
+				if (missing.isEmpty()) {
+					proceed.accept(batch);
+				} else {
+					this.minecraft.gui.setScreen(new ModsNeededScreen(this, missing, () -> proceed.accept(batch)));
+				}
+			});
+		}, "TweakSwitch requirement check");
+		thread.setDaemon(true);
+		thread.start();
 	}
 
 	/** 51568648 → "51.6M". */

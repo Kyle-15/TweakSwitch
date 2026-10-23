@@ -39,7 +39,8 @@ public final class VanillaTweaks {
 	 * @param category     readable category, e.g. "Aesthetic › More Zombies"
 	 */
 	public record VtPack(
-		String id, String display, String description, String categoryPath, String category, List<String> incompatible, @Nullable String previewExtension
+		String id, String display, String description, String categoryPath, String category, List<String> incompatible, @Nullable String previewExtension,
+		@Nullable String warning
 	) {
 		public String fileName() {
 			return FILE_PREFIX + display.replaceAll("[\\\\/:*?\"<>|]", "_") + ".zip";
@@ -59,16 +60,20 @@ public final class VanillaTweaks {
 	public static List<VtPack> fetchPacks() throws IOException, InterruptedException {
 		String body = WebClient.getString(URI.create(BASE + "/assets/resources/json/" + siteVersion() + "/rpcategories.json"));
 		List<VtPack> packs = new ArrayList<>();
-		collect(JsonParser.parseString(body).getAsJsonObject().getAsJsonArray("categories"), "", "", packs);
+		collect(JsonParser.parseString(body).getAsJsonObject().getAsJsonArray("categories"), "", "", null, packs);
 		return packs;
 	}
 
-	private static void collect(final JsonArray categories, final String parentPath, final String parentLabel, final List<VtPack> out) {
+	/** @param parentWarning the site's warning on the nearest enclosing category, e.g. that packs need OptiFine-like mods */
+	private static void collect(final JsonArray categories, final String parentPath, final String parentLabel, final @Nullable String parentWarning, final List<VtPack> out) {
 		for (JsonElement element : categories) {
 			JsonObject category = element.getAsJsonObject();
 			String name = category.get("category").getAsString();
 			String path = parentPath.isEmpty() ? slug(name) : parentPath + "." + slug(name);
 			String label = parentLabel.isEmpty() ? name : parentLabel + " › " + name;
+			String warning = category.has("warning") && category.getAsJsonObject("warning").has("text")
+				? stripHtml(category.getAsJsonObject("warning").get("text").getAsString())
+				: parentWarning;
 			if (category.has("packs")) {
 				for (JsonElement packElement : category.getAsJsonArray("packs")) {
 					JsonObject pack = packElement.getAsJsonObject();
@@ -83,12 +88,13 @@ public final class VanillaTweaks {
 						path,
 						label,
 						incompatible,
-						pack.has("previewExtension") ? pack.get("previewExtension").getAsString() : null
+						pack.has("previewExtension") ? pack.get("previewExtension").getAsString() : null,
+						warning
 					));
 				}
 			}
 			if (category.has("categories")) {
-				collect(category.getAsJsonArray("categories"), path, label, out);
+				collect(category.getAsJsonArray("categories"), path, label, warning, out);
 			}
 		}
 	}

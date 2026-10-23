@@ -73,8 +73,12 @@ public class TweakSwitchScreen extends PackListScreen {
 				.width(70)
 				.build()
 		);
-		footer.addChild(Button.builder(Component.translatable("tweakswitch.openFolder"), button -> Blaze3D.openPath(this.packsDirCreated())).width(100).build());
-		footer.addChild(Button.builder(CommonComponents.GUI_DONE, button -> this.onClose()).width(70).build());
+		footer.addChild(Button.builder(Component.translatable("tweakswitch.getUpdates"), button -> this.minecraft.gui.setScreen(new UpdatesScreen(this)))
+			.tooltip(Tooltip.create(Component.translatable("tweakswitch.getUpdates.tooltip")))
+			.width(70)
+			.build());
+		footer.addChild(Button.builder(Component.translatable("tweakswitch.openFolder"), button -> Blaze3D.openPath(this.packsDirCreated())).width(80).build());
+		footer.addChild(Button.builder(CommonComponents.GUI_DONE, button -> this.onClose()).width(60).build());
 	}
 
 	@Override
@@ -91,11 +95,12 @@ public class TweakSwitchScreen extends PackListScreen {
 		}
 
 		// Vanilla Tweaks downloads remember their category; anything else goes under "Other Packs", listed last
-		Map<String, String> categories = PackCategories.load();
+		Map<String, PackIndex.Entry> index = PackIndex.load();
 		String other = Component.translatable("tweakswitch.otherPacks").getString();
 		Map<String, List<Pack>> byCategory = new TreeMap<>(Comparator.comparing((String name) -> name.equals(other)).thenComparing(Comparator.naturalOrder()));
 		for (Pack pack : shown) {
-			String category = categories.getOrDefault(TweakSwitchPackSource.fileName(pack), other);
+			PackIndex.Entry entry = index.get(TweakSwitchPackSource.fileName(pack));
+			String category = entry != null ? entry.category() : other;
 			byCategory.computeIfAbsent(category, name -> new ArrayList<>()).add(pack);
 		}
 

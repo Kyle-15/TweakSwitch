@@ -1,6 +1,20 @@
 package com.tweakswitch.test;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.tweakswitch.DownloadScreen;
+import com.tweakswitch.Modrinth;
+import com.tweakswitch.ModsNeededScreen;
+import com.tweakswitch.TweakSwitch;
+import com.tweakswitch.UpdatesScreen;
+import com.tweakswitch.WebClient;
+import java.io.IOException;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import com.tweakswitch.ModrinthScreen;
 import com.tweakswitch.PackListScreen;
 import com.tweakswitch.TweakSwitchScreen;
@@ -120,10 +134,51 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		context.getInput().setCursorPos(0, 0);
 		context.waitTicks(10);
 		context.takeScreenshot("tweakswitch-modrinth-downloaded");
+		// A pack needing a mod brings up the warning with links; a pack needing another pack pulls it in too.
+		// Fresh Animations is deleted first so Extensions has to bring it back.
+		Path packs = TweakSwitch.packsDir();
+		deleteQuietly(packs.resolve("MR - Fresh Animations.zip"));
+		pickModrinthResult(context, "Hyper Punchy");
+		pickModrinthResult(context, "Fresh Animations: Extensions");
+		context.runOnClient(minecraft -> ((Button) field(DownloadScreen.class, minecraft.gui.screen(), "downloadButton")).onPress(null));
+		context.waitForScreen(ModsNeededScreen.class);
+		context.waitTicks(5);
+		context.takeScreenshot("tweakswitch-mods-needed");
+		context.clickScreenButton("tweakswitch.mods.downloadAnyway");
+		context.waitForScreen(ModrinthScreen.class);
+		context.waitFor(minecraft -> field(DownloadScreen.class, null, "progress") == null, 1200);
+		for (String file : List.of("MR - Hyper Punchy.zip", "MR - Fresh Animations_ Extensions.zip", "MR - Fresh Animations.zip")) {
+			if (!Files.exists(packs.resolve(file))) {
+				throw new AssertionError("Expected " + file + " to be downloaded");
+			}
+		}
+
 		context.clickScreenButton("gui.done");
 		context.waitForScreen(TweakSwitchScreen.class);
 		context.waitTicks(5);
 		context.takeScreenshot("tweakswitch-switches-with-modrinth");
+
+		// Updates: swap Fresh Animations for an older version, then update it back
+		String newSha1 = sha1(packs.resolve("MR - Fresh Animations.zip"));
+		String oldSha1 = installOlderVersion(packs.resolve("MR - Fresh Animations.zip"));
+		if (!sha1(packs.resolve("MR - Fresh Animations.zip")).equals(oldSha1)) {
+			throw new AssertionError("Older Fresh Animations didn't install cleanly");
+		}
+		context.clickScreenButton("tweakswitch.getUpdates");
+		context.waitForScreen(UpdatesScreen.class);
+		context.waitFor(minecraft -> field(UpdatesScreen.class, minecraft.gui.screen(), "items") != null, 1200);
+		context.waitTicks(5);
+		context.takeScreenshot("tweakswitch-updates");
+		context.runOnClient(minecraft -> ((Button) field(DownloadScreen.class, minecraft.gui.screen(), "downloadButton")).onPress(null));
+		context.waitFor(minecraft -> field(DownloadScreen.class, null, "progress") == null
+			&& field(UpdatesScreen.class, minecraft.gui.screen(), "items") != null, 1200);
+		context.waitTicks(5);
+		context.takeScreenshot("tweakswitch-updates-done");
+		if (!sha1(packs.resolve("MR - Fresh Animations.zip")).equals(newSha1)) {
+			throw new AssertionError("Fresh Animations wasn't updated to the newest version");
+		}
+		context.clickScreenButton("gui.done");
+		context.waitForScreen(TweakSwitchScreen.class);
 
 		// Switch one on and apply it: the pack should be selected and resources reloaded
 		String packId = "tweakswitch/VT - Cherry Picking.zip";
@@ -137,6 +192,59 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 			&& minecraft.options.resourcePacks.contains(packId));
 		if (!applied) {
 			throw new AssertionError("Switching on " + packId + " didn't select it");
+		}
+	}
+
+	/** Searches Modrinth for the title and picks the result with exactly that title. */
+	private static void pickModrinthResult(final ClientGameTestContext context, final String title) {
+		context.runOnClient(minecraft -> {
+			try {
+				Method method = PackListScreen.class.getDeclaredMethod("setSearchText", String.class);
+				method.setAccessible(true);
+				method.invoke(minecraft.gui.screen(), title);
+			} catch (ReflectiveOperationException e) {
+				throw new RuntimeException(e);
+			}
+		});
+		context.waitFor(minecraft -> title.equals(field(ModrinthScreen.class, null, "query")) && !(boolean) field(ModrinthScreen.class, null, "loading"), 600);
+		context.waitTicks(2);
+		context.runOnClient(minecraft -> {
+			Button row = (Button) rows(minecraft).entrySet().stream()
+				.filter(entry -> ((Modrinth.Project) entry.getValue()).title().equals(title))
+				.findFirst()
+				.orElseThrow(() -> new AssertionError("No Modrinth result titled " + title))
+				.getKey();
+			row.onPress(null);
+		});
+	}
+
+	/** Replaces the file with the oldest Fresh Animations version for this game version and returns that file's SHA-1. */
+	private static String installOlderVersion(final Path target) {
+		try {
+			String url = "https://api.modrinth.com/v2/project/fresh-animations/version?game_versions="
+				+ URLEncoder.encode("[\"" + Modrinth.gameVersion() + "\"]", StandardCharsets.UTF_8) + "&loaders=" + URLEncoder.encode("[\"minecraft\"]", StandardCharsets.UTF_8);
+			JsonArray versions = JsonParser.parseString(WebClient.getString(URI.create(url))).getAsJsonArray();
+			JsonObject file = versions.get(versions.size() - 1).getAsJsonObject().getAsJsonArray("files").get(0).getAsJsonObject();
+			WebClient.download(URI.create(file.get("url").getAsString()), target);
+			return file.getAsJsonObject("hashes").get("sha1").getAsString();
+		} catch (Exception e) {
+			throw new RuntimeException(e);
+		}
+	}
+
+	private static String sha1(final Path file) {
+		try {
+			return Modrinth.sha1(file);
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
+	}
+
+	private static void deleteQuietly(final Path file) {
+		try {
+			Files.deleteIfExists(file);
+		} catch (IOException e) {
+			throw new RuntimeException(e);
 		}
 	}
 

@@ -10,6 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.stream.Stream;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -56,8 +57,8 @@ public abstract class DownloadScreen<T> extends PackListScreen {
 	/** The file the pack is saved as in the TweakSwitch folder; used to tell which packs are already downloaded. */
 	protected abstract String fileName(T pack);
 
-	/** The category its switch goes under on the TweakSwitch screen. */
-	protected abstract String switchCategory(T pack);
+	/** Where the downloaded file came from, saved in {@link PackIndex} for the switch screen and for updates. */
+	protected abstract PackIndex.Entry indexEntry(T pack);
 
 	protected abstract @Nullable String imageUrl(T pack);
 
@@ -82,17 +83,27 @@ public abstract class DownloadScreen<T> extends PackListScreen {
 		return this.downloadButton;
 	}
 
+	/** Translation key for the download button, given the number of picked packs. */
+	protected String downloadLabelKey() {
+		return "tweakswitch.download";
+	}
+
 	protected void updateDownloadButton() {
 		if (this.downloadButton != null) {
-			this.downloadButton.setMessage(progress != null ? Component.literal(progress) : Component.translatable("tweakswitch.download", this.selected.size()));
+			this.downloadButton.setMessage(progress != null ? Component.literal(progress) : Component.translatable(this.downloadLabelKey(), this.selected.size()));
 			this.downloadButton.active = progress == null && !this.selected.isEmpty();
 		}
 	}
 
-	/** A button that picks or unpicks the pack, or a green ✔ if it's downloaded already. */
-	protected AbstractWidget createRow(final T pack, final Set<String> downloaded) {
+	/** Whether the pack needs nothing doing: by default, whether its file is in the folder already. */
+	protected boolean isDone(final T pack, final Set<String> files) {
+		return files.contains(this.fileName(pack));
+	}
+
+	/** A button that picks or unpicks the pack, or a green ✔ if it's {@linkplain #isDone done} already. */
+	protected AbstractWidget createRow(final T pack, final Set<String> files) {
 		AbstractWidget row;
-		if (downloaded.contains(this.fileName(pack))) {
+		if (this.isDone(pack, files)) {
 			row = Button.builder(Component.literal("✔ " + this.displayName(pack)).withStyle(ChatFormatting.GREEN), b -> {}).build();
 			row.active = false;
 		} else {
@@ -131,15 +142,36 @@ public abstract class DownloadScreen<T> extends PackListScreen {
 		if (this.selected.isEmpty() || progress != null) {
 			return;
 		}
+		this.beforeDownload(new ArrayList<>(this.selected.values()), this::download);
+	}
 
-		List<T> queue = new ArrayList<>(this.selected.values());
-		this.selected.clear();
+	/**
+	 * Runs before a batch starts, e.g. to warn about missing mods. Call {@code proceed} with the packs to download (it can
+	 * add to the list), or don't call it to cancel.
+	 */
+	protected void beforeDownload(final List<T> queue, final Consumer<List<T>> proceed) {
+		proceed.accept(queue);
+	}
+
+	/** Runs on the render thread after a batch, with the packs that downloaded fine. */
+	protected void afterDownload(final List<T> succeeded) {
+	}
+
+	/** Shows a status like "Checking..." on the download button while {@link #beforeDownload} works; null clears it. */
+	protected void setProgress(final @Nullable String text) {
+		progress = text;
+		this.updateDownloadButton();
+	}
+
+	private void download(final List<T> queue) {
+		queue.forEach(pack -> this.selected.remove(this.id(pack)));
 		Path folder = TweakSwitch.packsDir();
 		progress = Component.translatable("tweakswitch.progress", 0, queue.size()).getString();
 		this.updateDownloadButton();
 
 		Thread thread = new Thread(() -> {
 			int failed = 0;
+			List<T> succeeded = new ArrayList<>();
 			for (int i = 0; i < queue.size(); i++) {
 				T pack = queue.get(i);
 				String step = Component.translatable("tweakswitch.progress", i + 1, queue.size()).getString();
@@ -150,7 +182,8 @@ public abstract class DownloadScreen<T> extends PackListScreen {
 				try {
 					Files.createDirectories(folder);
 					this.download(pack, folder);
-					PackCategories.put(this.fileName(pack), this.switchCategory(pack));
+					PackIndex.put(this.fileName(pack), this.indexEntry(pack));
+					succeeded.add(pack);
 				} catch (Exception e) {
 					LOGGER.warn("Failed to download pack {}", this.id(pack), e);
 					failed++;
@@ -175,6 +208,7 @@ public abstract class DownloadScreen<T> extends PackListScreen {
 					Component.translatable(done == 1 ? "tweakswitch.doneOne" : "tweakswitch.done", done),
 					failures > 0 ? Component.translatable("tweakswitch.someFailed", failures).withStyle(ChatFormatting.RED) : Component.translatable("tweakswitch.doneHint")
 				);
+				this.afterDownload(succeeded);
 				this.refreshIfShown();
 			});
 		}, "TweakSwitch downloads");
