@@ -1,5 +1,7 @@
 package com.tweakswitch.test;
 
+import com.tweakswitch.DownloadScreen;
+import com.tweakswitch.ModrinthScreen;
 import com.tweakswitch.PackListScreen;
 import com.tweakswitch.TweakSwitchScreen;
 import com.tweakswitch.VanillaTweaksScreen;
@@ -49,9 +51,9 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		context.waitTicks(5);
 		context.takeScreenshot("tweakswitch-switches-empty");
 
-		context.clickScreenButton("tweakswitch.getPacks");
+		context.clickScreenButton("tweakswitch.getVanillaTweaks");
 		context.waitForScreen(VanillaTweaksScreen.class);
-		context.waitFor(minecraft -> !rows(minecraft).isEmpty() || staticField("packs") != null, 600);
+		context.waitFor(minecraft -> staticField("packs") != null, 600);
 		context.waitTicks(5);
 		context.takeScreenshot("tweakswitch-picker-collapsed");
 
@@ -82,8 +84,8 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		context.waitTicks(3);
 		context.takeScreenshot("tweakswitch-picker-picked");
 
-		context.runOnClient(minecraft -> ((Button) instanceField(minecraft.gui.screen(), "downloadButton")).onPress(null));
-		context.waitFor(minecraft -> staticField("progress") == null, 1200);
+		context.runOnClient(minecraft -> ((Button) field(DownloadScreen.class, minecraft.gui.screen(), "downloadButton")).onPress(null));
+		context.waitFor(minecraft -> field(DownloadScreen.class, null, "progress") == null, 1200);
 		context.waitTicks(10);
 		context.takeScreenshot("tweakswitch-picker-downloaded");
 
@@ -91,6 +93,37 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		context.waitForScreen(TweakSwitchScreen.class);
 		context.waitTicks(5);
 		context.takeScreenshot("tweakswitch-switches-downloaded");
+
+		// Modrinth: search results load, a hovered pack shows its picture, and a picked pack downloads as a switch
+		context.clickScreenButton("tweakswitch.getModrinth");
+		context.waitForScreen(ModrinthScreen.class);
+		context.waitFor(minecraft -> !rows(minecraft).isEmpty(), 600);
+		context.waitTicks(5);
+		context.takeScreenshot("tweakswitch-modrinth-results");
+		AbstractWidget firstResult = context.computeOnClient(minecraft -> rows(minecraft).keySet().stream()
+			.filter(widget -> widget.getY() > 40 && widget.getY() < 100)
+			.min(Comparator.comparingInt(AbstractWidget::getY))
+			.orElseThrow());
+		moveTo(context, firstResult);
+		context.waitTicks(100);
+		context.takeScreenshot("tweakswitch-modrinth-preview");
+		context.runOnClient(minecraft -> ((Button) firstResult).onPress(null));
+
+		// Typing in the search box runs a new search once typing stops
+		context.getInput().setCursorPos(0, 0);
+		context.getInput().typeChars("sky");
+		context.waitFor(minecraft -> "sky".equals(field(ModrinthScreen.class, null, "query")) && !(boolean) field(ModrinthScreen.class, null, "loading"), 600);
+		context.waitTicks(5);
+		context.takeScreenshot("tweakswitch-modrinth-search");
+		context.runOnClient(minecraft -> ((Button) field(DownloadScreen.class, minecraft.gui.screen(), "downloadButton")).onPress(null));
+		context.waitFor(minecraft -> field(DownloadScreen.class, null, "progress") == null, 1200);
+		context.getInput().setCursorPos(0, 0);
+		context.waitTicks(10);
+		context.takeScreenshot("tweakswitch-modrinth-downloaded");
+		context.clickScreenButton("gui.done");
+		context.waitForScreen(TweakSwitchScreen.class);
+		context.waitTicks(5);
+		context.takeScreenshot("tweakswitch-switches-with-modrinth");
 
 		// Switch one on and apply it: the pack should be selected and resources reloaded
 		String packId = "tweakswitch/VT - Cherry Picking.zip";
@@ -150,27 +183,7 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		}
 	}
 
-	private static Object instanceField(final Object screen, final String name) {
-		try {
-			Field field = VanillaTweaksScreen.class.getDeclaredField(name);
-			field.setAccessible(true);
-			return field.get(screen);
-		} catch (ReflectiveOperationException e) {
-			throw new RuntimeException(e);
-		}
-	}
-
-	@SuppressWarnings("unchecked")
 	private static Map<AbstractWidget, ?> rows(final Minecraft minecraft) {
-		if (!(minecraft.gui.screen() instanceof VanillaTweaksScreen screen)) {
-			return Map.of();
-		}
-		try {
-			Field field = VanillaTweaksScreen.class.getDeclaredField("rows");
-			field.setAccessible(true);
-			return (Map<AbstractWidget, ?>) field.get(screen);
-		} catch (ReflectiveOperationException e) {
-			throw new RuntimeException(e);
-		}
+		return minecraft.gui.screen() instanceof DownloadScreen<?> screen ? (Map<AbstractWidget, ?>) field(DownloadScreen.class, screen, "rows") : Map.of();
 	}
 }

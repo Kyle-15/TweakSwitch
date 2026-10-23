@@ -9,16 +9,12 @@ import com.google.gson.GsonBuilder;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -34,13 +30,8 @@ import org.jspecify.annotations.Nullable;
 public final class VanillaTweaks {
 	public static final URI SITE = URI.create("https://vanillatweaks.net/picker/resource-packs/");
 	private static final String BASE = "https://vanillatweaks.net";
-	private static final String USER_AGENT = "TweakSwitch/1.0 (personal Minecraft mod)";
 	public static final String FILE_PREFIX = "VT - ";
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
-	private static final HttpClient HTTP = HttpClient.newBuilder()
-		.connectTimeout(Duration.ofSeconds(15))
-		.followRedirects(HttpClient.Redirect.NORMAL)
-		.build();
 
 	/**
 	 * @param id           the site's internal pack name, e.g. "MZSteve"
@@ -66,7 +57,7 @@ public final class VanillaTweaks {
 	}
 
 	public static List<VtPack> fetchPacks() throws IOException, InterruptedException {
-		String body = send(HttpRequest.newBuilder(URI.create(BASE + "/assets/resources/json/" + siteVersion() + "/rpcategories.json")).GET());
+		String body = WebClient.getString(URI.create(BASE + "/assets/resources/json/" + siteVersion() + "/rpcategories.json"));
 		List<VtPack> packs = new ArrayList<>();
 		collect(JsonParser.parseString(body).getAsJsonObject().getAsJsonArray("categories"), "", "", packs);
 		return packs;
@@ -112,17 +103,9 @@ public final class VanillaTweaks {
 	}
 
 	/** The picture the website shows when you hover a pack. */
-	public static byte[] fetchPreview(final VtPack pack) throws IOException, InterruptedException {
+	public static String previewUrl(final VtPack pack) {
 		String extension = pack.previewExtension() != null ? pack.previewExtension() : "png";
-		URI uri = URI.create(BASE + "/assets/resources/previews/resourcepacks/" + siteVersion() + "/" + URLEncoder.encode(pack.id(), StandardCharsets.UTF_8) + "." + extension);
-		HttpResponse<byte[]> response = HTTP.send(
-			HttpRequest.newBuilder(uri).header("User-Agent", USER_AGENT).timeout(Duration.ofSeconds(30)).GET().build(),
-			HttpResponse.BodyHandlers.ofByteArray()
-		);
-		if (response.statusCode() != 200) {
-			throw new IOException("HTTP " + response.statusCode() + " for " + uri);
-		}
-		return response.body();
+		return BASE + "/assets/resources/previews/resourcepacks/" + siteVersion() + "/" + URLEncoder.encode(pack.id(), StandardCharsets.UTF_8) + "." + extension;
 	}
 
 	/** Downloads one pack into {@code targetDir} and returns the saved file. */
@@ -132,9 +115,7 @@ public final class VanillaTweaks {
 		ids.add(pack.id());
 		packs.add(pack.categoryPath(), ids);
 		String form = "packs=" + URLEncoder.encode(packs.toString(), StandardCharsets.UTF_8) + "&version=" + URLEncoder.encode(siteVersion(), StandardCharsets.UTF_8);
-		String body = send(HttpRequest.newBuilder(URI.create(BASE + "/assets/server/zipresourcepacks.php"))
-			.header("Content-Type", "application/x-www-form-urlencoded")
-			.POST(HttpRequest.BodyPublishers.ofString(form)));
+		String body = WebClient.postForm(URI.create(BASE + "/assets/server/zipresourcepacks.php"), form);
 
 		JsonObject result = JsonParser.parseString(body).getAsJsonObject();
 		if (!"success".equals(result.has("status") ? result.get("status").getAsString() : null) || !result.has("link")) {
@@ -143,18 +124,11 @@ public final class VanillaTweaks {
 
 		Path temp = Files.createTempFile("tweakswitch-", ".zip");
 		try {
-			HttpResponse<Path> response = HTTP.send(
-				HttpRequest.newBuilder(URI.create(BASE + result.get("link").getAsString())).header("User-Agent", USER_AGENT).GET().build(),
-				HttpResponse.BodyHandlers.ofFile(temp)
-			);
-			if (response.statusCode() != 200) {
-				throw new IOException("Download of " + pack.id() + " failed with HTTP " + response.statusCode());
-			}
+			WebClient.download(URI.create(BASE + result.get("link").getAsString()), temp);
 			setDescription(temp, pack.description());
 			Files.createDirectories(targetDir);
 			Path target = targetDir.resolve(pack.fileName());
 			Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
-			PackCategories.put(pack.fileName(), pack.category());
 			return target;
 		} finally {
 			Files.deleteIfExists(temp);
@@ -177,13 +151,5 @@ public final class VanillaTweaks {
 				Files.writeString(mcmeta, GSON.toJson(meta));
 			}
 		}
-	}
-
-	private static String send(final HttpRequest.Builder request) throws IOException, InterruptedException {
-		HttpResponse<String> response = HTTP.send(request.header("User-Agent", USER_AGENT).timeout(Duration.ofSeconds(30)).build(), HttpResponse.BodyHandlers.ofString());
-		if (response.statusCode() != 200) {
-			throw new IOException("Vanilla Tweaks returned HTTP " + response.statusCode() + " for " + response.uri());
-		}
-		return response.body();
 	}
 }

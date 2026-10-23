@@ -60,15 +60,21 @@ public class TweakSwitchScreen extends PackListScreen {
 
 	@Override
 	protected void addFooter() {
-		LinearLayout footer = this.layout.addToFooter(LinearLayout.horizontal().spacing(8));
+		LinearLayout footer = this.layout.addToFooter(LinearLayout.horizontal().spacing(6));
 		footer.addChild(
-			Button.builder(Component.translatable("tweakswitch.getPacks"), button -> this.minecraft.gui.setScreen(new VanillaTweaksScreen(this)))
-				.tooltip(Tooltip.create(Component.translatable("tweakswitch.getPacks.tooltip")))
-				.width(100)
+			Button.builder(Component.translatable("tweakswitch.getVanillaTweaks"), button -> this.minecraft.gui.setScreen(new VanillaTweaksScreen(this)))
+				.tooltip(Tooltip.create(Component.translatable("tweakswitch.getVanillaTweaks.tooltip")))
+				.width(90)
+				.build()
+		);
+		footer.addChild(
+			Button.builder(Component.translatable("tweakswitch.getModrinth"), button -> this.minecraft.gui.setScreen(new ModrinthScreen(this)))
+				.tooltip(Tooltip.create(Component.translatable("tweakswitch.getModrinth.tooltip")))
+				.width(70)
 				.build()
 		);
 		footer.addChild(Button.builder(Component.translatable("tweakswitch.openFolder"), button -> Blaze3D.openPath(this.packsDirCreated())).width(100).build());
-		footer.addChild(Button.builder(CommonComponents.GUI_DONE, button -> this.onClose()).width(100).build());
+		footer.addChild(Button.builder(CommonComponents.GUI_DONE, button -> this.onClose()).width(70).build());
 	}
 
 	@Override

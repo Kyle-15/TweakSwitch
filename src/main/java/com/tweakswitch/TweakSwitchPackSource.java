@@ -48,9 +48,11 @@ public class TweakSwitchPackSource implements RepositorySource {
 			FolderRepositorySource.discoverPacks(folder, Minecraft.getInstance().directoryValidator(), (content, resources) -> {
 				String fileName = content.getFileName().toString();
 				String title = fileName.endsWith(".zip") ? fileName.substring(0, fileName.length() - 4) : fileName;
-				// Downloads are already grouped under their Vanilla Tweaks category, so the "VT - " file prefix is just noise
-				if (title.startsWith(VanillaTweaks.FILE_PREFIX)) {
-					title = title.substring(VanillaTweaks.FILE_PREFIX.length());
+				// Downloads are already grouped under their source's category, so the "VT - " / "MR - " file prefix is just noise
+				for (String prefix : new String[] {VanillaTweaks.FILE_PREFIX, Modrinth.FILE_PREFIX}) {
+					if (title.startsWith(prefix)) {
+						title = title.substring(prefix.length());
+					}
 				}
 				PackLocationInfo location = new PackLocationInfo(ID_PREFIX + fileName, Component.literal(title), SOURCE, Optional.empty());
 				Pack pack = Pack.readMetaAndCreate(location, resources, PackType.CLIENT_RESOURCES, SELECTION_CONFIG);

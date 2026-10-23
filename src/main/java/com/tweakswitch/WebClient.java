@@ -1,0 +1,49 @@
+package com.tweakswitch;
+
+import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.file.Path;
+import java.time.Duration;
+
+/** One HTTP client for every site TweakSwitch talks to, so they all see the same User-Agent. Calls block. */
+public final class WebClient {
+	public static final String USER_AGENT = "TweakSwitch/1.0 (personal Minecraft mod)";
+	private static final HttpClient HTTP = HttpClient.newBuilder()
+		.connectTimeout(Duration.ofSeconds(15))
+		.followRedirects(HttpClient.Redirect.NORMAL)
+		.build();
+
+	private WebClient() {
+	}
+
+	public static HttpRequest.Builder request(final URI uri) {
+		return HttpRequest.newBuilder(uri).header("User-Agent", USER_AGENT).timeout(Duration.ofSeconds(60));
+	}
+
+	public static String getString(final URI uri) throws IOException, InterruptedException {
+		return send(request(uri).GET(), HttpResponse.BodyHandlers.ofString());
+	}
+
+	public static String postForm(final URI uri, final String form) throws IOException, InterruptedException {
+		return send(request(uri).header("Content-Type", "application/x-www-form-urlencoded").POST(HttpRequest.BodyPublishers.ofString(form)), HttpResponse.BodyHandlers.ofString());
+	}
+
+	public static byte[] getBytes(final URI uri) throws IOException, InterruptedException {
+		return send(request(uri).GET(), HttpResponse.BodyHandlers.ofByteArray());
+	}
+
+	public static void download(final URI uri, final Path file) throws IOException, InterruptedException {
+		send(request(uri).GET(), HttpResponse.BodyHandlers.ofFile(file));
+	}
+
+	private static <T> T send(final HttpRequest.Builder request, final HttpResponse.BodyHandler<T> handler) throws IOException, InterruptedException {
+		HttpResponse<T> response = HTTP.send(request.build(), handler);
+		if (response.statusCode() != 200) {
+			throw new IOException("HTTP " + response.statusCode() + " for " + response.uri());
+		}
+		return response.body();
+	}
+}

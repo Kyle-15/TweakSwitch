@@ -25,6 +25,19 @@ dependencies {
 	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
 	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
 
+	// WebP decoding for Modrinth images (Java can't read WebP on its own), bundled inside the mod jar
+	for (String lib : [
+		"com.twelvemonkeys.imageio:imageio-webp",
+		"com.twelvemonkeys.imageio:imageio-core",
+		"com.twelvemonkeys.imageio:imageio-metadata",
+		"com.twelvemonkeys.common:common-lang",
+		"com.twelvemonkeys.common:common-io",
+		"com.twelvemonkeys.common:common-image",
+	]) {
+		implementation "${lib}:${project.twelvemonkeys_version}"
+		include "${lib}:${project.twelvemonkeys_version}"
+	}
+
 	// Optional: adds a config button in Mod Menu's mod list
 	compileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
 	localRuntime "com.terraformersmc:modmenu:${project.modmenu_version}"

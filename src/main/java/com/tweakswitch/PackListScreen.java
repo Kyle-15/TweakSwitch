@@ -112,6 +112,16 @@ public abstract class PackListScreen extends OptionsSubScreen {
 		}
 	}
 
+	protected void setSearchText(final String text) {
+		if (this.search != null) {
+			this.search.setValue(text);
+		}
+	}
+
+	protected String searchText() {
+		return this.search != null ? this.search.getValue().trim() : "";
+	}
+
 	protected boolean isSearching() {
 		return this.search != null && !this.search.getValue().isBlank();
 	}
