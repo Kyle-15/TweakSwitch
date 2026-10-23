@@ -22,10 +22,8 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.CycleButton;
-import net.minecraft.client.gui.components.OptionsList;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.components.toasts.SystemToast;
-import net.minecraft.client.gui.layouts.LinearLayout;
 import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.CommonComponents;
@@ -60,29 +58,26 @@ public class TweakSwitchScreen extends PackListScreen {
 
 	@Override
 	protected void addFooter() {
-		LinearLayout footer = this.layout.addToFooter(LinearLayout.horizontal().spacing(6));
-		footer.addChild(
+		this.addFooterButtons(
 			Button.builder(Component.translatable("tweakswitch.getVanillaTweaks"), button -> this.minecraft.gui.setScreen(new VanillaTweaksScreen(this)))
 				.tooltip(Tooltip.create(Component.translatable("tweakswitch.getVanillaTweaks.tooltip")))
 				.width(90)
-				.build()
-		);
-		footer.addChild(
+				.build(),
 			Button.builder(Component.translatable("tweakswitch.getModrinth"), button -> this.minecraft.gui.setScreen(new ModrinthScreen(this)))
 				.tooltip(Tooltip.create(Component.translatable("tweakswitch.getModrinth.tooltip")))
 				.width(70)
-				.build()
+				.build(),
+			Button.builder(Component.translatable("tweakswitch.getUpdates"), button -> this.minecraft.gui.setScreen(new UpdatesScreen(this)))
+				.tooltip(Tooltip.create(Component.translatable("tweakswitch.getUpdates.tooltip")))
+				.width(70)
+				.build(),
+			Button.builder(Component.translatable("tweakswitch.openFolder"), button -> Blaze3D.openPath(this.packsDirCreated())).width(80).build(),
+			Button.builder(CommonComponents.GUI_DONE, button -> this.onClose()).width(60).build()
 		);
-		footer.addChild(Button.builder(Component.translatable("tweakswitch.getUpdates"), button -> this.minecraft.gui.setScreen(new UpdatesScreen(this)))
-			.tooltip(Tooltip.create(Component.translatable("tweakswitch.getUpdates.tooltip")))
-			.width(70)
-			.build());
-		footer.addChild(Button.builder(Component.translatable("tweakswitch.openFolder"), button -> Blaze3D.openPath(this.packsDirCreated())).width(80).build());
-		footer.addChild(Button.builder(CommonComponents.GUI_DONE, button -> this.onClose()).width(60).build());
 	}
 
 	@Override
-	protected void fillList(final OptionsList list) {
+	protected void fillList(final PackList list) {
 		List<Pack> ours = this.repository.getAvailablePacks().stream()
 			.filter(TweakSwitchPackSource::isOurs)
 			.sorted(Comparator.comparing(pack -> pack.getTitle().getString().toLowerCase(Locale.ROOT)))
@@ -90,7 +85,7 @@ public class TweakSwitchScreen extends PackListScreen {
 		List<Pack> shown = ours.stream().filter(pack -> this.matches(pack.getTitle().getString(), pack.getDescription().getString())).toList();
 
 		if (shown.isEmpty()) {
-			list.addHeader(Component.translatable(ours.isEmpty() ? "tweakswitch.empty" : "tweakswitch.noMatches").withStyle(ChatFormatting.GRAY));
+			list.addText(Component.translatable(ours.isEmpty() ? "tweakswitch.empty" : "tweakswitch.noMatches").withStyle(ChatFormatting.GRAY));
 			return;
 		}
 
@@ -107,7 +102,7 @@ public class TweakSwitchScreen extends PackListScreen {
 		Collection<String> selected = this.repository.getSelectedIds();
 		byCategory.forEach((category, packs) -> {
 			long on = packs.stream().filter(pack -> this.pending.getOrDefault(pack.getId(), selected.contains(pack.getId()))).count();
-			this.addCategory(list, COLLAPSED, true, category, on + "/" + packs.size() + " on", () -> packs.forEach(pack -> list.addBig(this.createSwitch(pack))));
+			this.addCategory(list, COLLAPSED, true, category, on + "/" + packs.size() + " on", () -> packs.forEach(pack -> list.addRow(this.createSwitch(pack))));
 		});
 	}
 
@@ -142,7 +137,7 @@ public class TweakSwitchScreen extends PackListScreen {
 		this.pending.clear();
 		if (changed) {
 			// Saves the new pack list to options.txt and reloads resources
-			this.options.updateResourcePacks(this.repository);
+			this.minecraft.options.updateResourcePacks(this.repository);
 		}
 	}
 

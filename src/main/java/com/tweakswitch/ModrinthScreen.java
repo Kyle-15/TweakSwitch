@@ -13,8 +13,6 @@ import java.util.function.Consumer;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.CycleButton;
-import net.minecraft.client.gui.components.OptionsList;
-import net.minecraft.client.gui.layouts.LinearLayout;
 import net.minecraft.client.gui.screens.ConfirmLinkScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.CommonComponents;
@@ -49,18 +47,13 @@ public class ModrinthScreen extends DownloadScreen<Modrinth.Project> {
 	@Override
 	protected void init() {
 		super.init();
-		// First visit, or the last search failed: search now
-		if (!searched || (loadError != null && !loading)) {
-			this.search(false);
-		}
-	}
-
-	@Override
-	protected void addTitle() {
-		super.addTitle();
 		// The search box starts with the last search instead of empty
 		if (this.searchText().isEmpty() && !query.isEmpty()) {
 			this.setSearchText(query);
+		}
+		// First visit, or the last search failed: search now
+		if (!searched || (loadError != null && !loading)) {
+			this.search(false);
 		}
 	}
 
@@ -125,22 +118,21 @@ public class ModrinthScreen extends DownloadScreen<Modrinth.Project> {
 
 	@Override
 	protected void addFooter() {
-		LinearLayout footer = this.layout.addToFooter(LinearLayout.horizontal().spacing(6));
-		footer.addChild(
+		this.addFooterButtons(
 			CycleButton.builder((Modrinth.Sort value) -> Component.translatable("tweakswitch.mr.sort." + value.name().toLowerCase(Locale.ROOT)), sort)
 				.withValues(List.of(Modrinth.Sort.values()))
 				.create(0, 0, 120, 20, Component.translatable("tweakswitch.mr.sort"), (button, value) -> {
 					sort = value;
 					this.search(false);
-				})
+				}),
+			this.createDownloadButton(),
+			Button.builder(Component.translatable("tweakswitch.website"), ConfirmLinkScreen.confirmLink(this, Modrinth.SITE)).width(70).build(),
+			Button.builder(CommonComponents.GUI_DONE, button -> this.onClose()).width(70).build()
 		);
-		footer.addChild(this.createDownloadButton());
-		footer.addChild(Button.builder(Component.translatable("tweakswitch.website"), ConfirmLinkScreen.confirmLink(this, Modrinth.SITE)).width(70).build());
-		footer.addChild(Button.builder(CommonComponents.GUI_DONE, button -> this.onClose()).width(70).build());
 	}
 
 	@Override
-	protected void fillPackList(final OptionsList list) {
+	protected void fillPackList(final PackList list) {
 		if (results.isEmpty()) {
 			Component message;
 			if (loadError != null) {
@@ -150,22 +142,22 @@ public class ModrinthScreen extends DownloadScreen<Modrinth.Project> {
 			} else {
 				message = Component.translatable("tweakswitch.noMatches").withStyle(ChatFormatting.GRAY);
 			}
-			list.addHeader(message);
+			list.addText(message);
 			return;
 		}
 
-		list.addHeader(Component.translatable("tweakswitch.mr.results", String.format(Locale.ROOT, "%,d", totalHits)).withStyle(ChatFormatting.GRAY));
+		list.addText(Component.translatable("tweakswitch.mr.results", String.format(Locale.ROOT, "%,d", totalHits)).withStyle(ChatFormatting.GRAY));
 		Set<String> downloaded = this.downloadedFiles();
 		for (Modrinth.Project project : results) {
-			list.addBig(this.createRow(project, downloaded));
+			list.addRow(this.createRow(project, downloaded));
 		}
 
 		if (loading) {
-			list.addHeader(Component.translatable("tweakswitch.loading").withStyle(ChatFormatting.GRAY));
+			list.addText(Component.translatable("tweakswitch.loading").withStyle(ChatFormatting.GRAY));
 		} else if (loadError != null) {
-			list.addHeader(Component.translatable("tweakswitch.loadFailed", loadError).withStyle(ChatFormatting.RED));
+			list.addText(Component.translatable("tweakswitch.loadFailed", loadError).withStyle(ChatFormatting.RED));
 		} else if (results.size() < totalHits) {
-			list.addBig(Button.builder(Component.translatable("tweakswitch.mr.more"), button -> this.search(true)).build());
+			list.addRow(Button.builder(Component.translatable("tweakswitch.mr.more"), button -> this.search(true)).build());
 		}
 	}
 
@@ -190,8 +182,8 @@ public class ModrinthScreen extends DownloadScreen<Modrinth.Project> {
 	}
 
 	@Override
-	protected @Nullable String imageUrl(final Modrinth.Project project) {
-		return project.imageUrl();
+	protected List<String> imageUrls(final Modrinth.Project project) {
+		return project.images();
 	}
 
 	@Override

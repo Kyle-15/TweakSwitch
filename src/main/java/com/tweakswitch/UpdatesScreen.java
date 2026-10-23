@@ -14,8 +14,6 @@ import java.util.Set;
 import java.util.stream.Stream;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.OptionsList;
-import net.minecraft.client.gui.layouts.LinearLayout;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
@@ -163,10 +161,11 @@ public class UpdatesScreen extends DownloadScreen<UpdatesScreen.Item> {
 
 	@Override
 	protected void addFooter() {
-		LinearLayout footer = this.layout.addToFooter(LinearLayout.horizontal().spacing(6));
-		footer.addChild(Button.builder(Component.translatable("tweakswitch.updates.checkAgain"), button -> this.check()).width(100).build());
-		footer.addChild(this.createDownloadButton());
-		footer.addChild(Button.builder(CommonComponents.GUI_DONE, button -> this.onClose()).width(80).build());
+		this.addFooterButtons(
+			Button.builder(Component.translatable("tweakswitch.updates.checkAgain"), button -> this.check()).width(100).build(),
+			this.createDownloadButton(),
+			Button.builder(CommonComponents.GUI_DONE, button -> this.onClose()).width(80).build()
+		);
 	}
 
 	@Override
@@ -175,15 +174,15 @@ public class UpdatesScreen extends DownloadScreen<UpdatesScreen.Item> {
 	}
 
 	@Override
-	protected void fillPackList(final OptionsList list) {
+	protected void fillPackList(final PackList list) {
 		if (this.items == null) {
-			list.addHeader(this.checkError != null
+			list.addText(this.checkError != null
 				? Component.translatable("tweakswitch.loadFailed", this.checkError).withStyle(ChatFormatting.RED)
 				: Component.translatable("tweakswitch.updates.checking").withStyle(ChatFormatting.GRAY));
 			return;
 		}
 		if (this.items.isEmpty()) {
-			list.addHeader(Component.translatable("tweakswitch.updates.none").withStyle(ChatFormatting.GRAY));
+			list.addText(Component.translatable("tweakswitch.updates.none").withStyle(ChatFormatting.GRAY));
 			return;
 		}
 
@@ -195,7 +194,7 @@ public class UpdatesScreen extends DownloadScreen<UpdatesScreen.Item> {
 		this.addGroup(list, files, Status.UNKNOWN, false);
 	}
 
-	private void addGroup(final OptionsList list, final Set<String> files, final Status status, final boolean openByDefault) {
+	private void addGroup(final PackList list, final Set<String> files, final Status status, final boolean openByDefault) {
 		List<Item> group = this.items == null ? List.of() : this.items.stream()
 			.filter(item -> item.status() == status && this.matches(item.title()))
 			.toList();
@@ -203,7 +202,7 @@ public class UpdatesScreen extends DownloadScreen<UpdatesScreen.Item> {
 			return;
 		}
 		String name = Component.translatable("tweakswitch.updates.group." + status.name().toLowerCase(Locale.ROOT)).getString();
-		this.addCategory(list, TOGGLED, openByDefault, name, Integer.toString(group.size()), () -> group.forEach(item -> list.addBig(this.createRow(item, files))));
+		this.addCategory(list, TOGGLED, openByDefault, name, Integer.toString(group.size()), () -> group.forEach(item -> list.addRow(this.createRow(item, files))));
 	}
 
 	@Override
@@ -239,8 +238,8 @@ public class UpdatesScreen extends DownloadScreen<UpdatesScreen.Item> {
 	}
 
 	@Override
-	protected @Nullable String imageUrl(final Item item) {
-		return null;
+	protected List<String> imageUrls(final Item item) {
+		return List.of();
 	}
 
 	@Override

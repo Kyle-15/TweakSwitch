@@ -1,58 +1,103 @@
 package com.tweakswitch;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import net.minecraft.ChatFormatting;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.client.gui.components.OptionsList;
 import net.minecraft.client.gui.components.StringWidget;
+import net.minecraft.client.gui.layouts.HeaderAndFooterLayout;
 import net.minecraft.client.gui.layouts.LinearLayout;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.gui.screens.options.OptionsSubScreen;
 import net.minecraft.network.chat.Component;
 import org.jspecify.annotations.Nullable;
 
-/** Shared layout for the TweakSwitch screens: title and search box on top, a scrolling list of buttons below. */
-public abstract class PackListScreen extends OptionsSubScreen {
+/**
+ * Shared layout for the TweakSwitch screens: title and search box on top, a {@link PackList} in the middle, buttons at the
+ * bottom. Everything shrinks to fit narrow windows.
+ */
+public abstract class PackListScreen extends Screen {
 	private static final int HEADER_HEIGHT = 4 + 9 + 6 + 15 + 6;
+	private static final int SEARCH_WIDTH = 200;
+	private static final int FOOTER_GAP = 6;
 
+	protected final @Nullable Screen lastScreen;
+	protected final HeaderAndFooterLayout layout = new HeaderAndFooterLayout(this);
+	protected @Nullable PackList list;
 	private @Nullable EditBox search;
+	private final List<AbstractWidget> footerWidgets = new ArrayList<>();
+	private final List<Integer> footerWidths = new ArrayList<>();
 	private boolean refreshQueued;
 
 	protected PackListScreen(final @Nullable Screen lastScreen, final Component title) {
-		super(lastScreen, Minecraft.getInstance().options, title);
+		super(title);
+		this.lastScreen = lastScreen;
+	}
+
+	/** Screens without a search box (like the mods warning) return false. */
+	protected boolean hasSearch() {
+		return true;
 	}
 
 	@Override
-	protected void addTitle() {
-		this.layout.setHeaderHeight(HEADER_HEIGHT);
-		LinearLayout header = this.layout.addToHeader(LinearLayout.vertical().spacing(6));
-		header.defaultCellSetting().alignHorizontallyCenter();
-		header.addChild(new StringWidget(this.title, this.font));
-		String previousSearch = this.search != null ? this.search.getValue() : "";
-		this.search = header.addChild(new EditBox(this.font, 0, 0, 200, 15, Component.translatable("tweakswitch.search")));
-		this.search.setHint(Component.translatable("tweakswitch.search").withStyle(EditBox.SEARCH_HINT_STYLE));
-		this.search.setValue(previousSearch);
-		this.search.setResponder(value -> {
+	protected void init() {
+		if (this.hasSearch()) {
+			this.layout.setHeaderHeight(HEADER_HEIGHT);
+			LinearLayout header = this.layout.addToHeader(LinearLayout.vertical().spacing(6));
+			header.defaultCellSetting().alignHorizontallyCenter();
+			header.addChild(new StringWidget(this.title, this.font));
+			String previousSearch = this.search != null ? this.search.getValue() : "";
+			this.search = header.addChild(new EditBox(this.font, 0, 0, SEARCH_WIDTH, 15, Component.translatable("tweakswitch.search")));
+			this.search.setHint(Component.translatable("tweakswitch.search").withStyle(EditBox.SEARCH_HINT_STYLE));
+			this.search.setValue(previousSearch);
+			this.search.setResponder(value -> {
+				this.refreshList();
+				if (this.list != null) {
+					this.list.setScrollAmount(0.0);
+				}
+			});
+		} else {
+			this.layout.addTitleHeader(this.title, this.font);
+		}
+		this.list = this.layout.addToContents(new PackList(this.minecraft, this.width, this.layout.getContentHeight(), this.layout.getHeaderHeight()));
+		this.addFooter();
+		this.layout.visitWidgets(this::addRenderableWidget);
+		this.repositionElements();
+	}
+
+	/** Adds the bottom buttons, usually with {@link #addFooterButtons}. */
+	protected abstract void addFooter();
+
+	/** A row of bottom buttons at their given widths, shrunk evenly if the window is too narrow for them. */
+	protected void addFooterButtons(final AbstractWidget... widgets) {
+		LinearLayout footer = this.layout.addToFooter(LinearLayout.horizontal().spacing(FOOTER_GAP));
+		for (AbstractWidget widget : widgets) {
+			footer.addChild(widget);
+			this.footerWidgets.add(widget);
+			this.footerWidths.add(widget.getWidth());
+		}
+	}
+
+	@Override
+	protected void repositionElements() {
+		int preferred = this.footerWidths.stream().mapToInt(Integer::intValue).sum();
+		int available = this.width - 12 - FOOTER_GAP * Math.max(0, this.footerWidgets.size() - 1);
+		double scale = preferred > available ? (double) available / preferred : 1.0;
+		for (int i = 0; i < this.footerWidgets.size(); i++) {
+			this.footerWidgets.get(i).setWidth(Math.max(30, (int) (this.footerWidths.get(i) * scale)));
+		}
+		if (this.search != null) {
+			this.search.setWidth(Math.min(SEARCH_WIDTH, this.width - 20));
+		}
+		this.layout.arrangeElements();
+		if (this.list != null) {
+			this.list.updateSize(this.width, this.layout);
+			// Text wrapping and grid columns depend on the width
 			this.refreshList();
-			if (this.list != null) {
-				this.list.setScrollAmount(0.0);
-			}
-		});
-	}
-
-	@Override
-	protected void addContents() {
-		this.list = this.layout.addToContents(new PackList(this.minecraft, this.width, this));
-		this.addOptions();
-	}
-
-	@Override
-	protected void addOptions() {
-		this.refreshList();
+		}
 	}
 
 	@Override
@@ -64,15 +109,23 @@ public abstract class PackListScreen extends OptionsSubScreen {
 		}
 	}
 
+	@Override
+	public void onClose() {
+		this.minecraft.gui.setScreen(this.lastScreen);
+	}
+
 	/** Rebuilds the rows, keeping the scroll position so expanding a category doesn't jump to the top. */
 	protected void refreshList() {
-		if (this.list instanceof PackList packList) {
-			double scroll = packList.scrollAmount();
-			packList.clear();
-			this.fillList(packList);
-			packList.setScrollAmount(scroll);
+		if (this.list != null) {
+			double scroll = this.list.scrollAmount();
+			this.list.clear();
+			this.fillList(this.list);
+			this.list.setScrollAmount(scroll);
 		}
 	}
+
+	/** Adds the rows that match {@link #matches}. Called again whenever the search or window size changes. */
+	protected abstract void fillList(PackList list);
 
 	/**
 	 * Adds a clickable "▶ Name (count)" row that shows or hides the rows {@code addRows} adds. {@code toggled} holds the
@@ -80,11 +133,11 @@ public abstract class PackListScreen extends OptionsSubScreen {
 	 * never hidden.
 	 */
 	protected void addCategory(
-		final OptionsList list, final Set<String> toggled, final boolean openByDefault, final String name, final String count, final Runnable addRows
+		final PackList list, final Set<String> toggled, final boolean openByDefault, final String name, final String count, final Runnable addRows
 	) {
 		boolean open = this.isSearching() || openByDefault != toggled.contains(name);
 		Component label = Component.literal((open ? "▼ " : "▶ ") + name + " ").append(Component.literal("(" + count + ")").withStyle(ChatFormatting.GRAY));
-		list.addBig(Button.builder(label, button -> {
+		list.addRow(Button.builder(label, button -> {
 			if (this.isSearching()) {
 				return;
 			}
@@ -126,11 +179,8 @@ public abstract class PackListScreen extends OptionsSubScreen {
 		return this.search != null && !this.search.getValue().isBlank();
 	}
 
-	/** Adds the rows that match {@link #matches}. Called again whenever the search changes. */
-	protected abstract void fillList(OptionsList list);
-
 	protected boolean matches(final String... texts) {
-		String query = this.search != null ? this.search.getValue().toLowerCase(Locale.ROOT).trim() : "";
+		String query = this.searchText().toLowerCase(Locale.ROOT);
 		if (query.isEmpty()) {
 			return true;
 		}
@@ -142,30 +192,8 @@ public abstract class PackListScreen extends OptionsSubScreen {
 		return false;
 	}
 
-	/** The button under the mouse in the list, or null. Only counts rows actually drawn this frame. */
+	/** The button under the mouse in the list, or null. */
 	protected @Nullable AbstractWidget hoveredListWidget(final double mouseX, final double mouseY) {
-		return this.list instanceof PackList packList ? packList.hoveredWidget(mouseX, mouseY) : null;
-	}
-
-	private static class PackList extends OptionsList {
-		PackList(final Minecraft minecraft, final int width, final OptionsSubScreen screen) {
-			super(minecraft, width, screen);
-		}
-
-		void clear() {
-			this.clearEntries();
-		}
-
-		@Nullable AbstractWidget hoveredWidget(final double mouseX, final double mouseY) {
-			OptionsList.AbstractEntry entry = this.getHovered();
-			if (entry != null) {
-				for (var child : entry.children()) {
-					if (child instanceof AbstractWidget widget && widget.isMouseOver(mouseX, mouseY)) {
-						return widget;
-					}
-				}
-			}
-			return null;
-		}
+		return this.list != null ? this.list.hoveredWidget(mouseX, mouseY) : null;
 	}
 }

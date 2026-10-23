@@ -12,9 +12,7 @@ import java.util.Set;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.OptionsList;
 import net.minecraft.client.gui.components.Tooltip;
-import net.minecraft.client.gui.layouts.LinearLayout;
 import net.minecraft.client.gui.screens.ConfirmLinkScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.CommonComponents;
@@ -73,22 +71,21 @@ public class VanillaTweaksScreen extends DownloadScreen<VanillaTweaks.VtPack> {
 
 	@Override
 	protected void addFooter() {
-		LinearLayout footer = this.layout.addToFooter(LinearLayout.horizontal().spacing(6));
-		footer.addChild(
+		this.addFooterButtons(
 			Button.builder(Component.translatable("tweakswitch.vt.selectShown"), button -> this.toggleShown())
 				.tooltip(Tooltip.create(Component.translatable("tweakswitch.vt.selectShown.tooltip")))
 				.width(90)
-				.build()
+				.build(),
+			this.createDownloadButton(),
+			Button.builder(Component.translatable("tweakswitch.website"), ConfirmLinkScreen.confirmLink(this, VanillaTweaks.SITE)).width(70).build(),
+			Button.builder(CommonComponents.GUI_DONE, button -> this.onClose()).width(70).build()
 		);
-		footer.addChild(this.createDownloadButton());
-		footer.addChild(Button.builder(Component.translatable("tweakswitch.website"), ConfirmLinkScreen.confirmLink(this, VanillaTweaks.SITE)).width(70).build());
-		footer.addChild(Button.builder(CommonComponents.GUI_DONE, button -> this.onClose()).width(70).build());
 	}
 
 	@Override
-	protected void fillPackList(final OptionsList list) {
+	protected void fillPackList(final PackList list) {
 		if (packs == null) {
-			list.addHeader(loadError != null
+			list.addText(loadError != null
 				? Component.translatable("tweakswitch.loadFailed", loadError).withStyle(ChatFormatting.RED)
 				: Component.translatable("tweakswitch.loading").withStyle(ChatFormatting.GRAY));
 			return;
@@ -101,7 +98,7 @@ public class VanillaTweaksScreen extends DownloadScreen<VanillaTweaks.VtPack> {
 		}
 
 		if (byCategory.isEmpty()) {
-			list.addHeader(Component.translatable("tweakswitch.noMatches").withStyle(ChatFormatting.GRAY));
+			list.addText(Component.translatable("tweakswitch.noMatches").withStyle(ChatFormatting.GRAY));
 		}
 
 		byCategory.forEach((category, categoryPacks) -> {
@@ -112,7 +109,7 @@ public class VanillaTweaksScreen extends DownloadScreen<VanillaTweaks.VtPack> {
 				for (VanillaTweaks.VtPack pack : categoryPacks) {
 					widgets.add(this.createRow(pack, downloaded));
 				}
-				list.addSmall(widgets);
+				list.addGrid(widgets, 2);
 			});
 		});
 	}
@@ -155,8 +152,8 @@ public class VanillaTweaksScreen extends DownloadScreen<VanillaTweaks.VtPack> {
 	}
 
 	@Override
-	protected String imageUrl(final VanillaTweaks.VtPack pack) {
-		return VanillaTweaks.previewUrl(pack);
+	protected List<String> imageUrls(final VanillaTweaks.VtPack pack) {
+		return List.of(VanillaTweaks.previewUrl(pack));
 	}
 
 	@Override

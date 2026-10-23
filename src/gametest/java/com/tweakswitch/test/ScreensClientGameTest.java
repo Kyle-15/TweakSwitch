@@ -65,6 +65,37 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		context.waitTicks(5);
 		context.takeScreenshot("tweakswitch-switches-empty");
 
+		// A small window: text wraps, buttons shrink, Vanilla Tweaks drops to one column
+		// 640x480 at GUI scale 2 is 320 GUI pixels wide, the narrowest Minecraft allows
+		context.getInput().resizeWindow(640, 480);
+		context.runOnClient(minecraft -> {
+			minecraft.options.guiScale().set(2);
+			minecraft.resizeGui();
+		});
+		context.waitTicks(5);
+		context.takeScreenshot("tweakswitch-small-switches");
+		context.setScreen(() -> new VanillaTweaksScreen(new TweakSwitchScreen(null)));
+		context.waitFor(minecraft -> staticField("packs") != null, 600);
+		context.runOnClient(minecraft -> {
+			Set<String> expanded = staticField("EXPANDED");
+			expanded.add("Aesthetic");
+			refresh(minecraft);
+		});
+		context.waitTicks(5);
+		context.takeScreenshot("tweakswitch-small-picker");
+		context.setScreen(() -> new ModrinthScreen(new TweakSwitchScreen(null)));
+		context.waitFor(minecraft -> !rows(minecraft).isEmpty(), 600);
+		context.waitTicks(5);
+		context.takeScreenshot("tweakswitch-small-modrinth");
+		context.runOnClient(minecraft -> ((Set<String>) staticField("EXPANDED")).clear());
+		context.getInput().resizeWindow(854, 480);
+		context.runOnClient(minecraft -> {
+			minecraft.options.guiScale().set(0);
+			minecraft.resizeGui();
+		});
+		context.setScreen(() -> new TweakSwitchScreen(null));
+		context.waitTicks(5);
+
 		context.clickScreenButton("tweakswitch.getVanillaTweaks");
 		context.waitForScreen(VanillaTweaksScreen.class);
 		context.waitFor(minecraft -> staticField("packs") != null, 600);
@@ -88,6 +119,9 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		moveTo(context, firstTwo.get(0));
 		context.waitTicks(80);
 		context.takeScreenshot("tweakswitch-picker-preview");
+		// A moment later the animated preview should be on a different frame
+		context.waitTicks(7);
+		context.takeScreenshot("tweakswitch-picker-preview-later");
 
 		// Pick the first two packs (pressed directly, since the cursor is imprecise)
 		for (AbstractWidget row : firstTwo) {

@@ -52,7 +52,7 @@ public final class Modrinth {
 
 	public record Project(
 		String id, String slug, String title, String description, String author, long downloads, List<String> categories,
-		@Nullable String iconUrl, @Nullable String imageUrl
+		@Nullable String iconUrl, List<String> images
 	) {
 		public String fileName() {
 			return FILE_PREFIX + title.replaceAll("[\\\\/:*?\"<>|]", "_") + ".zip";
@@ -141,9 +141,21 @@ public final class Modrinth {
 				hit.getAsJsonArray("display_categories").forEach(category -> categories.add(category.getAsString()));
 			}
 			String icon = string(hit, "icon_url");
-			String gallery = string(hit, "featured_gallery");
-			if (gallery == null && hit.has("gallery") && !hit.getAsJsonArray("gallery").isEmpty()) {
-				gallery = hit.getAsJsonArray("gallery").get(0).getAsString();
+			// Featured picture first, then the rest of the gallery; the icon only if there's no gallery
+			List<String> images = new ArrayList<>();
+			String featured = string(hit, "featured_gallery");
+			if (featured != null) {
+				images.add(featured);
+			}
+			if (hit.has("gallery")) {
+				hit.getAsJsonArray("gallery").forEach(picture -> {
+					if (!images.contains(picture.getAsString())) {
+						images.add(picture.getAsString());
+					}
+				});
+			}
+			if (images.isEmpty() && icon != null) {
+				images.add(icon);
 			}
 			projects.add(new Project(
 				hit.get("project_id").getAsString(),
@@ -154,7 +166,7 @@ public final class Modrinth {
 				hit.has("downloads") ? hit.get("downloads").getAsLong() : 0,
 				categories,
 				icon,
-				gallery != null ? gallery : icon
+				List.copyOf(images)
 			));
 		}
 		return new Page(projects, result.get("total_hits").getAsInt());
@@ -223,7 +235,7 @@ public final class Modrinth {
 
 	/** A bare project for a dependency, enough to download it. */
 	public static Project projectFor(final LinkedProject linked) {
-		return new Project(linked.id(), linked.slug(), linked.title(), "", "", 0, List.of(), null, null);
+		return new Project(linked.id(), linked.slug(), linked.title(), "", "", 0, List.of(), null, List.of());
 	}
 
 	/** Downloads the newest version of the project made for this Minecraft version. */
