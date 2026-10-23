@@ -39,3 +39,6 @@ replay_*.log
 *.hprof
 *.jfr
 .mcsrc/
+
+# game logs from test runs
+logs/

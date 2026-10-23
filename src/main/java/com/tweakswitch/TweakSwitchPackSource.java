@@ -35,6 +35,11 @@ public class TweakSwitchPackSource implements RepositorySource {
 		return pack.getId().startsWith(ID_PREFIX);
 	}
 
+	/** The pack's file name in the packs folder, e.g. "VT - Steve Zombies.zip". */
+	public static String fileName(final Pack pack) {
+		return pack.getId().substring(ID_PREFIX.length());
+	}
+
 	@Override
 	public void loadPacks(final Consumer<Pack> result) {
 		Path folder = TweakSwitch.packsDir();
@@ -43,6 +48,10 @@ public class TweakSwitchPackSource implements RepositorySource {
 			FolderRepositorySource.discoverPacks(folder, Minecraft.getInstance().directoryValidator(), (content, resources) -> {
 				String fileName = content.getFileName().toString();
 				String title = fileName.endsWith(".zip") ? fileName.substring(0, fileName.length() - 4) : fileName;
+				// Downloads are already grouped under their Vanilla Tweaks category, so the "VT - " file prefix is just noise
+				if (title.startsWith(VanillaTweaks.FILE_PREFIX)) {
+					title = title.substring(VanillaTweaks.FILE_PREFIX.length());
+				}
 				PackLocationInfo location = new PackLocationInfo(ID_PREFIX + fileName, Component.literal(title), SOURCE, Optional.empty());
 				Pack pack = Pack.readMetaAndCreate(location, resources, PackType.CLIENT_RESOURCES, SELECTION_CONFIG);
 				if (pack != null) {

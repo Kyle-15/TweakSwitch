@@ -3,31 +3,31 @@ package com.tweakswitch;
 import com.mojang.blaze3d.Blaze3D;
 import com.mojang.logging.LogUtils;
 import java.io.IOException;
-import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.CycleButton;
-import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.OptionsList;
-import net.minecraft.client.gui.components.StringWidget;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.components.toasts.SystemToast;
 import net.minecraft.client.gui.layouts.LinearLayout;
-import net.minecraft.client.gui.screens.ConfirmLinkScreen;
 import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.gui.screens.options.OptionsSubScreen;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.packs.repository.Pack;
@@ -36,52 +36,33 @@ import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 
 /** One on/off switch per pack in the TweakSwitch folder. Changes apply, with one resource reload, when the screen closes. */
-public class TweakSwitchScreen extends OptionsSubScreen {
+public class TweakSwitchScreen extends PackListScreen {
 	private static final Logger LOGGER = LogUtils.getLogger();
-	private static final URI VANILLA_TWEAKS_URI = URI.create("https://vanillatweaks.net/picker/resource-packs/");
-	private static final int HEADER_HEIGHT = 4 + 9 + 6 + 15 + 6;
 
 	private final PackRepository repository;
+	/** Categories the player collapsed; kept for the session. */
+	private static final Set<String> COLLAPSED = new HashSet<>();
+
 	/** Switch state the player has chosen but not yet applied, by pack id. */
 	private final Map<String, Boolean> pending = new HashMap<>();
-	private @Nullable EditBox search;
 
 	public TweakSwitchScreen(final @Nullable Screen lastScreen) {
-		super(lastScreen, Minecraft.getInstance().options, Component.translatable("tweakswitch.title"));
+		super(lastScreen, Component.translatable("tweakswitch.title"));
 		this.repository = Minecraft.getInstance().getResourcePackRepository();
-		// Pick up packs added to the folder since the last reload
+	}
+
+	@Override
+	public void added() {
+		// Runs every time the screen is shown, including coming back from the downloader: pick up new packs in the folder
 		this.repository.reload();
-	}
-
-	@Override
-	protected void addTitle() {
-		this.layout.setHeaderHeight(HEADER_HEIGHT);
-		LinearLayout header = this.layout.addToHeader(LinearLayout.vertical().spacing(6));
-		header.defaultCellSetting().alignHorizontallyCenter();
-		header.addChild(new StringWidget(this.title, this.font));
-		String previousSearch = this.search != null ? this.search.getValue() : "";
-		this.search = header.addChild(new EditBox(this.font, 0, 0, 200, 15, Component.translatable("tweakswitch.search")));
-		this.search.setHint(Component.translatable("tweakswitch.search").withStyle(EditBox.SEARCH_HINT_STYLE));
-		this.search.setValue(previousSearch);
-		this.search.setResponder(value -> this.fillList());
-	}
-
-	@Override
-	protected void addContents() {
-		this.list = this.layout.addToContents(new PackList(this.minecraft, this.width, this));
-		this.addOptions();
-	}
-
-	@Override
-	protected void addOptions() {
-		this.fillList();
+		this.refreshList();
 	}
 
 	@Override
 	protected void addFooter() {
 		LinearLayout footer = this.layout.addToFooter(LinearLayout.horizontal().spacing(8));
 		footer.addChild(
-			Button.builder(Component.translatable("tweakswitch.getPacks"), ConfirmLinkScreen.confirmLink(this, VANILLA_TWEAKS_URI))
+			Button.builder(Component.translatable("tweakswitch.getPacks"), button -> this.minecraft.gui.setScreen(new VanillaTweaksScreen(this)))
 				.tooltip(Tooltip.create(Component.translatable("tweakswitch.getPacks.tooltip")))
 				.width(100)
 				.build()
@@ -91,38 +72,32 @@ public class TweakSwitchScreen extends OptionsSubScreen {
 	}
 
 	@Override
-	protected void setInitialFocus() {
-		if (this.search != null) {
-			this.setInitialFocus(this.search);
-		} else {
-			super.setInitialFocus();
-		}
-	}
-
-	private void fillList() {
-		if (!(this.list instanceof PackList packList)) {
-			return;
-		}
-
-		packList.clear();
-		String query = this.search != null ? this.search.getValue().toLowerCase(Locale.ROOT) : "";
+	protected void fillList(final OptionsList list) {
 		List<Pack> ours = this.repository.getAvailablePacks().stream()
 			.filter(TweakSwitchPackSource::isOurs)
 			.sorted(Comparator.comparing(pack -> pack.getTitle().getString().toLowerCase(Locale.ROOT)))
 			.toList();
-		List<Pack> shown = ours.stream()
-			.filter(pack -> query.isBlank()
-				|| pack.getTitle().getString().toLowerCase(Locale.ROOT).contains(query)
-				|| pack.getDescription().getString().toLowerCase(Locale.ROOT).contains(query))
-			.toList();
+		List<Pack> shown = ours.stream().filter(pack -> this.matches(pack.getTitle().getString(), pack.getDescription().getString())).toList();
 
 		if (shown.isEmpty()) {
-			packList.addHeader(Component.translatable(ours.isEmpty() ? "tweakswitch.empty" : "tweakswitch.noMatches").withStyle(ChatFormatting.GRAY));
+			list.addHeader(Component.translatable(ours.isEmpty() ? "tweakswitch.empty" : "tweakswitch.noMatches").withStyle(ChatFormatting.GRAY));
+			return;
 		}
 
+		// Vanilla Tweaks downloads remember their category; anything else goes under "Other Packs", listed last
+		Map<String, String> categories = PackCategories.load();
+		String other = Component.translatable("tweakswitch.otherPacks").getString();
+		Map<String, List<Pack>> byCategory = new TreeMap<>(Comparator.comparing((String name) -> name.equals(other)).thenComparing(Comparator.naturalOrder()));
 		for (Pack pack : shown) {
-			packList.addBig(this.createSwitch(pack));
+			String category = categories.getOrDefault(TweakSwitchPackSource.fileName(pack), other);
+			byCategory.computeIfAbsent(category, name -> new ArrayList<>()).add(pack);
 		}
+
+		Collection<String> selected = this.repository.getSelectedIds();
+		byCategory.forEach((category, packs) -> {
+			long on = packs.stream().filter(pack -> this.pending.getOrDefault(pack.getId(), selected.contains(pack.getId()))).count();
+			this.addCategory(list, COLLAPSED, true, category, on + "/" + packs.size() + " on", () -> packs.forEach(pack -> list.addBig(this.createSwitch(pack))));
+		});
 	}
 
 	private CycleButton<Boolean> createSwitch(final Pack pack) {
@@ -134,7 +109,11 @@ public class TweakSwitchScreen extends OptionsSubScreen {
 		Component name = pack.getCompatibility().isCompatible() ? pack.getTitle() : pack.getTitle().copy().withStyle(ChatFormatting.RED);
 		return CycleButton.onOffBuilder(on)
 			.withTooltip(value -> Tooltip.create(description))
-			.create(name, (button, value) -> this.pending.put(id, value));
+			.create(name, (button, value) -> {
+				this.pending.put(id, value);
+				// Updates the "x/y on" counts
+				this.queueRefresh();
+			});
 	}
 
 	@Override
@@ -211,16 +190,5 @@ public class TweakSwitchScreen extends OptionsSubScreen {
 			LOGGER.warn("Failed to create {}", dir, e);
 		}
 		return dir;
-	}
-
-	private static class PackList extends OptionsList {
-		PackList(final Minecraft minecraft, final int width, final OptionsSubScreen screen) {
-			super(minecraft, width, screen);
-		}
-
-		void clear() {
-			this.clearEntries();
-			this.setScrollAmount(0.0);
-		}
 	}
 }
