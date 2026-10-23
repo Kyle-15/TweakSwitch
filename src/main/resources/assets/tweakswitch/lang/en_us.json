@@ -1,0 +1,15 @@
+{
+	"key.category.tweakswitch.main": "TweakSwitch",
+	"key.tweakswitch.open": "Open TweakSwitch",
+	"tweakswitch.title": "TweakSwitch",
+	"tweakswitch.source": "TweakSwitch",
+	"tweakswitch.search": "Search packs...",
+	"tweakswitch.empty": "No packs yet. Click Get Packs, then drop the .zip files onto this screen.",
+	"tweakswitch.noMatches": "No packs match your search.",
+	"tweakswitch.incompatible": "Made for a different Minecraft version; it may not work correctly.",
+	"tweakswitch.getPacks": "Get Packs",
+	"tweakswitch.getPacks.tooltip": "Opens the Vanilla Tweaks resource pack picker in your browser. Download the packs you want, then drop the .zip files onto this screen.",
+	"tweakswitch.openFolder": "Open Packs Folder",
+	"tweakswitch.dropConfirm": "Import these packs into TweakSwitch?",
+	"tweakswitch.importFailed": "Some packs could not be imported. Check the log for details."
+}

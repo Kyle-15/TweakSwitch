@@ -1,0 +1,20 @@
+{
+	"schemaVersion": 1,
+	"id": "tweakswitch",
+	"version": "${version}",
+	"name": "TweakSwitch",
+	"description": "On/off switches for resource packs you drop into the tweakswitch/packs folder.",
+	"authors": ["kyle"],
+	"license": "All-Rights-Reserved",
+	"environment": "client",
+	"entrypoints": {
+		"client": ["com.tweakswitch.TweakSwitch"]
+	},
+	"mixins": ["tweakswitch.mixins.json"],
+	"depends": {
+		"fabricloader": ">=0.20.1",
+		"minecraft": "~26.3",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}
