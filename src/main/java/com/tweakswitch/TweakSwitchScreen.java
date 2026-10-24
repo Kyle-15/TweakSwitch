@@ -16,13 +16,18 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import com.mojang.blaze3d.platform.NativeImage;
+import com.tweakswitch.ui.SwitchRow;
+import java.io.InputStream;
 import net.minecraft.ChatFormatting;
+import net.minecraft.client.renderer.texture.DynamicTexture;
+import net.minecraft.resources.Identifier;
+import net.minecraft.server.packs.PackMetadataResources;
+import net.minecraft.server.packs.resources.IoSupplier;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.CycleButton;
-import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.components.toasts.SystemToast;
 import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
@@ -38,9 +43,13 @@ public class TweakSwitchScreen extends PackListScreen {
 	private static final Logger LOGGER = LogUtils.getLogger();
 
 	private final PackRepository repository;
+	private static final Identifier UNKNOWN_PACK_ICON = Identifier.withDefaultNamespace("textures/misc/unknown_pack.png");
+	private static final Map<String, Identifier> PACK_ICONS = new HashMap<>();
 	/** Categories the player collapsed; kept for the session. */
 	private static final Set<String> COLLAPSED = new HashSet<>();
 
+	/** Where each downloaded pack came from, read when the list is built. */
+	private Map<String, PackIndex.Entry> index = Map.of();
 	/** Switch state the player has chosen but not yet applied, by pack id. */
 	private final Map<String, Boolean> pending = new HashMap<>();
 
@@ -59,21 +68,16 @@ public class TweakSwitchScreen extends PackListScreen {
 	@Override
 	protected void addFooter() {
 		this.addFooterButtons(
-			Button.builder(Component.translatable("tweakswitch.getVanillaTweaks"), button -> this.minecraft.gui.setScreen(new VanillaTweaksScreen(this)))
-				.tooltip(Tooltip.create(Component.translatable("tweakswitch.getVanillaTweaks.tooltip")))
-				.width(90)
-				.build(),
-			Button.builder(Component.translatable("tweakswitch.getModrinth"), button -> this.minecraft.gui.setScreen(new ModrinthScreen(this)))
-				.tooltip(Tooltip.create(Component.translatable("tweakswitch.getModrinth.tooltip")))
-				.width(70)
-				.build(),
-			Button.builder(Component.translatable("tweakswitch.getUpdates"), button -> this.minecraft.gui.setScreen(new UpdatesScreen(this)))
-				.tooltip(Tooltip.create(Component.translatable("tweakswitch.getUpdates.tooltip")))
-				.width(70)
-				.build(),
-			Button.builder(Component.translatable("tweakswitch.openFolder"), button -> Blaze3D.openPath(this.packsDirCreated())).width(80).build(),
-			Button.builder(CommonComponents.GUI_DONE, button -> this.onClose()).width(60).build()
+			this.button(Component.translatable("tweakswitch.getVanillaTweaks"), 90, button -> this.minecraft.gui.setScreen(new VanillaTweaksScreen(this)))
+				.withTooltip(Component.translatable("tweakswitch.getVanillaTweaks.tooltip")),
+			this.button(Component.translatable("tweakswitch.getModrinth"), 70, button -> this.minecraft.gui.setScreen(new ModrinthScreen(this)))
+				.withTooltip(Component.translatable("tweakswitch.getModrinth.tooltip")),
+			this.button(Component.translatable("tweakswitch.getUpdates"), 70, button -> this.minecraft.gui.setScreen(new UpdatesScreen(this)))
+				.withTooltip(Component.translatable("tweakswitch.getUpdates.tooltip")),
+			this.button(Component.translatable("tweakswitch.openFolder"), 80, button -> Blaze3D.openPath(this.packsDirCreated())),
+			this.primaryButton(CommonComponents.GUI_DONE, 60, button -> this.onClose())
 		);
+
 	}
 
 	@Override
@@ -90,7 +94,8 @@ public class TweakSwitchScreen extends PackListScreen {
 		}
 
 		// Vanilla Tweaks downloads remember their category; anything else goes under "Other Packs", listed last
-		Map<String, PackIndex.Entry> index = PackIndex.load();
+		this.index = PackIndex.load();
+		Map<String, PackIndex.Entry> index = this.index;
 		String other = Component.translatable("tweakswitch.otherPacks").getString();
 		Map<String, List<Pack>> byCategory = new TreeMap<>(Comparator.comparing((String name) -> name.equals(other)).thenComparing(Comparator.naturalOrder()));
 		for (Pack pack : shown) {
@@ -102,24 +107,59 @@ public class TweakSwitchScreen extends PackListScreen {
 		Collection<String> selected = this.repository.getSelectedIds();
 		byCategory.forEach((category, packs) -> {
 			long on = packs.stream().filter(pack -> this.pending.getOrDefault(pack.getId(), selected.contains(pack.getId()))).count();
-			this.addCategory(list, COLLAPSED, true, category, on + "/" + packs.size() + " on", () -> packs.forEach(pack -> list.addRow(this.createSwitch(pack))));
+			this.addCategory(list, COLLAPSED, true, category, on + "/" + packs.size() + " on", () -> packs.forEach(pack -> list.addRow(this.createSwitch(pack), SwitchRow.HEIGHT)));
 		});
 	}
 
-	private CycleButton<Boolean> createSwitch(final Pack pack) {
+	private SwitchRow createSwitch(final Pack pack) {
 		String id = pack.getId();
-		boolean on = this.pending.getOrDefault(id, this.repository.getSelectedIds().contains(id));
-		Component description = pack.getCompatibility().isCompatible()
+		boolean compatible = pack.getCompatibility().isCompatible();
+		Component description = compatible
 			? pack.getDescription()
 			: Component.empty().append(pack.getDescription()).append("\n").append(Component.translatable("tweakswitch.incompatible").withStyle(ChatFormatting.RED));
-		Component name = pack.getCompatibility().isCompatible() ? pack.getTitle() : pack.getTitle().copy().withStyle(ChatFormatting.RED);
-		return CycleButton.onOffBuilder(on)
-			.withTooltip(value -> Tooltip.create(description))
-			.create(name, (button, value) -> {
-				this.pending.put(id, value);
+		return new SwitchRow(this.theme(), this.iconFor(pack), pack.getTitle(), description, !compatible,
+			() -> this.pending.getOrDefault(id, this.repository.getSelectedIds().contains(id)),
+			() -> {
+				this.pending.put(id, !this.pending.getOrDefault(id, this.repository.getSelectedIds().contains(id)));
 				// Updates the "x/y on" counts
 				this.queueRefresh();
 			});
+	}
+
+	/**
+	 * Vanilla Tweaks zips all carry the same Vanilla Tweaks logo, so their switches use each tweak's icon from the site
+	 * (the logo until it loads). Everything else uses its own pack.png.
+	 */
+	private Supplier<Identifier> iconFor(final Pack pack) {
+		Identifier own = packIcon(pack);
+		PackIndex.Entry entry = this.index.get(TweakSwitchPackSource.fileName(pack));
+		if (entry == null || !PackIndex.VANILLA_TWEAKS.equals(entry.source()) || entry.id() == null) {
+			return () -> own;
+		}
+		String url = VanillaTweaks.iconUrl(entry.id());
+		return () -> {
+			Identifier site = RemoteImages.getIcon(url).textureAt(0);
+			return site != null ? site : own;
+		};
+	}
+
+	/** The pack's own pack.png as a texture, loaded once per session; vanilla's "unknown pack" picture if it has none. */
+	private static Identifier packIcon(final Pack pack) {
+		return PACK_ICONS.computeIfAbsent(pack.getId(), id -> {
+			try (PackMetadataResources resources = pack.openMetadata()) {
+				IoSupplier<InputStream> png = resources.getRootResource("pack.png");
+				if (png != null) {
+					try (InputStream stream = png.get()) {
+						Identifier location = Identifier.fromNamespaceAndPath(TweakSwitch.MOD_ID, "pack_icon/" + Integer.toHexString(id.hashCode()) + "_" + PACK_ICONS.size());
+						Minecraft.getInstance().getTextureManager().register(location, new DynamicTexture(location::toString, NativeImage.read(stream)));
+						return location;
+					}
+				}
+			} catch (Exception e) {
+				LOGGER.debug("No icon for pack {}", id, e);
+			}
+			return UNKNOWN_PACK_ICON;
+		});
 	}
 
 	@Override

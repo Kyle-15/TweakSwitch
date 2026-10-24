@@ -10,8 +10,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
+import com.tweakswitch.ui.Draw;
+import com.tweakswitch.ui.ThemedButton;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractWidget;
@@ -94,7 +97,7 @@ public abstract class DownloadScreen<T> extends PackListScreen {
 	protected abstract void fillPackList(PackList list);
 
 	protected Button createDownloadButton() {
-		this.downloadButton = Button.builder(Component.empty(), button -> this.startDownload()).width(110).build();
+		this.downloadButton = this.primaryButton(Component.empty(), 110, button -> this.startDownload());
 		this.updateDownloadButton();
 		return this.downloadButton;
 	}
@@ -116,32 +119,34 @@ public abstract class DownloadScreen<T> extends PackListScreen {
 		return files.contains(this.fileName(pack));
 	}
 
-	/** A button that picks or unpicks the pack, or a green ✔ if it's {@linkplain #isDone done} already. */
+	/** The row (or tile, or card) for a pack: picks or unpicks it when clicked, or shows it's {@linkplain #isDone done} already. */
 	protected AbstractWidget createRow(final T pack, final Set<String> files) {
-		AbstractWidget row;
-		if (this.isDone(pack, files)) {
-			row = Button.builder(Component.literal("✔ " + this.displayName(pack)).withStyle(ChatFormatting.GREEN), b -> {}).build();
-			row.active = false;
-		} else {
-			row = Button.builder(this.rowLabel(pack), button -> {
-				if (this.selected.remove(this.id(pack)) == null) {
-					this.selected.put(this.id(pack), pack);
-				}
-				button.setMessage(this.rowLabel(pack));
-				this.updateDownloadButton();
-				// Updates counts shown elsewhere in the list
-				this.queueRefresh();
-			}).build();
-		}
+		boolean done = this.isDone(pack, files);
+		AbstractWidget row = this.createPackWidget(pack, done, () -> this.selected.containsKey(this.id(pack)), () -> {
+			if (this.selected.remove(this.id(pack)) == null) {
+				this.selected.put(this.id(pack), pack);
+			}
+			this.updateDownloadButton();
+			// Updates counts shown elsewhere in the list
+			this.queueRefresh();
+		});
 		this.rows.put(row, pack);
 		return row;
 	}
 
-	/** Picked packs are yellow with a ✚, so the whole button width is left for the name. */
-	private Component rowLabel(final T pack) {
-		return this.selected.containsKey(this.id(pack))
-			? Component.literal("✚ " + this.displayName(pack)).withStyle(ChatFormatting.YELLOW)
-			: Component.literal(this.displayName(pack));
+	/**
+	 * Draws one pack; each source styles it like its website. {@code picked} is read every frame, so the widget doesn't
+	 * need rebuilding when it's clicked. The default is a plain themed button.
+	 */
+	protected AbstractWidget createPackWidget(final T pack, final boolean done, final BooleanSupplier picked, final Runnable toggle) {
+		ThemedButton button = new ThemedButton(this.theme(), ThemedButton.Kind.SECONDARY, Component.literal(this.displayName(pack)), 150, b -> toggle.run()) {
+			@Override
+			public Component getMessage() {
+				return Component.literal((done ? "✔ " : picked.getAsBoolean() ? "✚ " : "") + DownloadScreen.this.displayName(pack));
+			}
+		};
+		button.active = !done;
+		return button.highlightWhen(picked);
 	}
 
 	protected Set<String> downloadedFiles() {
@@ -318,8 +323,7 @@ public abstract class DownloadScreen<T> extends PackListScreen {
 		int y = Math.max(4, Math.min(mouseY - boxHeight / 2, this.height - boxHeight - 4));
 
 		graphics.nextStratum();
-		graphics.fill(x, y, x + boxWidth, y + boxHeight, 0xF0100010);
-		graphics.outline(x, y, boxWidth, boxHeight, 0xFF5000FF);
+		Draw.roundRectOutlined(graphics, x, y, boxWidth, boxHeight, 6, this.theme().bar(), this.theme().accent());
 		int contentY = y + PANEL_PADDING;
 		Identifier texture = image.textureAt(now - this.imageStart);
 		if (texture != null) {

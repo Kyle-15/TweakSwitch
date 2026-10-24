@@ -9,10 +9,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import com.tweakswitch.ui.PackTile;
+import com.tweakswitch.ui.Theme;
+import java.util.function.BooleanSupplier;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.components.AbstractWidget;
-import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.ConfirmLinkScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.CommonComponents;
@@ -72,13 +73,11 @@ public class VanillaTweaksScreen extends DownloadScreen<VanillaTweaks.VtPack> {
 	@Override
 	protected void addFooter() {
 		this.addFooterButtons(
-			Button.builder(Component.translatable("tweakswitch.vt.selectShown"), button -> this.toggleShown())
-				.tooltip(Tooltip.create(Component.translatable("tweakswitch.vt.selectShown.tooltip")))
-				.width(90)
-				.build(),
+			this.button(Component.translatable("tweakswitch.vt.selectShown"), 90, button -> this.toggleShown())
+				.withTooltip(Component.translatable("tweakswitch.vt.selectShown.tooltip")),
 			this.createDownloadButton(),
-			Button.builder(Component.translatable("tweakswitch.website"), ConfirmLinkScreen.confirmLink(this, VanillaTweaks.SITE)).width(70).build(),
-			Button.builder(CommonComponents.GUI_DONE, button -> this.onClose()).width(70).build()
+			this.button(Component.translatable("tweakswitch.website"), 70, ConfirmLinkScreen.confirmLink(this, VanillaTweaks.SITE)),
+			this.button(CommonComponents.GUI_DONE, 70, button -> this.onClose())
 		);
 	}
 
@@ -109,7 +108,7 @@ public class VanillaTweaksScreen extends DownloadScreen<VanillaTweaks.VtPack> {
 				for (VanillaTweaks.VtPack pack : categoryPacks) {
 					widgets.add(this.createRow(pack, downloaded));
 				}
-				list.addGrid(widgets, 2);
+				list.addTiles(widgets, PackTile.MIN_WIDTH, PackTile.HEIGHT);
 			});
 		});
 	}
@@ -129,6 +128,28 @@ public class VanillaTweaksScreen extends DownloadScreen<VanillaTweaks.VtPack> {
 		}
 		this.refreshList();
 		this.updateDownloadButton();
+	}
+
+	@Override
+	protected Theme theme() {
+		return Theme.VANILLA_TWEAKS;
+	}
+
+	/** "Vanilla Tweaks" in white with the version in their orange, like the site's header. */
+	@Override
+	protected Component styledTitle() {
+		return Component.literal("Vanilla Tweaks").withStyle(style -> style.withBold(true))
+			.append(Component.literal("  Resource Packs " + VanillaTweaks.siteVersion()).withColor(Theme.VANILLA_TWEAKS.accent()));
+	}
+
+	/** A tile with the pack's icon from the site and its name, like their picker. */
+	@Override
+	protected AbstractWidget createPackWidget(final VanillaTweaks.VtPack pack, final boolean done, final BooleanSupplier picked, final Runnable toggle) {
+		String iconUrl = VanillaTweaks.iconUrl(pack);
+		return new PackTile(this.theme(), Component.literal(pack.display()), () -> {
+			RemoteImages.Image icon = RemoteImages.getIcon(iconUrl);
+			return icon.textureAt(0);
+		}, picked, done, toggle);
 	}
 
 	@Override

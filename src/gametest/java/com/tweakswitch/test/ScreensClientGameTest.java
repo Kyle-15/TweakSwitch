@@ -31,6 +31,7 @@ import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.components.AbstractButton;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.TitleScreen;
 
@@ -125,7 +126,7 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 
 		// Pick the first two packs (pressed directly, since the cursor is imprecise)
 		for (AbstractWidget row : firstTwo) {
-			context.runOnClient(minecraft -> ((Button) row).onPress(null));
+			context.runOnClient(minecraft -> ((AbstractButton) row).onPress(null));
 			context.waitTicks(3);
 		}
 		context.getInput().setCursorPos(0, 0);
@@ -159,7 +160,7 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		moveTo(context, firstResult);
 		context.waitTicks(100);
 		context.takeScreenshot("tweakswitch-modrinth-preview");
-		context.runOnClient(minecraft -> ((Button) firstResult).onPress(null));
+		context.runOnClient(minecraft -> ((AbstractButton) firstResult).onPress(null));
 
 		// Typing in the search box runs a new search once typing stops
 		context.getInput().setCursorPos(0, 0);
@@ -263,7 +264,7 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		context.waitFor(minecraft -> title.equals(field(ModrinthScreen.class, null, "query")) && !(boolean) field(ModrinthScreen.class, null, "loading"), 600);
 		context.waitTicks(2);
 		context.runOnClient(minecraft -> {
-			Button row = (Button) rows(minecraft).entrySet().stream()
+			AbstractButton row = (AbstractButton) rows(minecraft).entrySet().stream()
 				.filter(entry -> ((Modrinth.Project) entry.getValue()).title().equals(title))
 				.findFirst()
 				.orElseThrow(() -> new AssertionError("No Modrinth result titled " + title))

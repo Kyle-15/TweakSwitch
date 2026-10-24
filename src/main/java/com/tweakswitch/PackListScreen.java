@@ -4,7 +4,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
-import net.minecraft.ChatFormatting;
+import com.tweakswitch.ui.Draw;
+import com.tweakswitch.ui.SectionHeader;
+import com.tweakswitch.ui.Theme;
+import com.tweakswitch.ui.ThemedButton;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
@@ -37,6 +41,16 @@ public abstract class PackListScreen extends Screen {
 		this.lastScreen = lastScreen;
 	}
 
+	/** The colors this screen is drawn in. */
+	protected Theme theme() {
+		return Theme.HOME;
+	}
+
+	/** The title as shown in the header; screens can restyle it. */
+	protected Component styledTitle() {
+		return this.title.copy().withStyle(style -> style.withBold(true));
+	}
+
 	/** Screens without a search box (like the mods warning) return false. */
 	protected boolean hasSearch() {
 		return true;
@@ -48,10 +62,13 @@ public abstract class PackListScreen extends Screen {
 			this.layout.setHeaderHeight(HEADER_HEIGHT);
 			LinearLayout header = this.layout.addToHeader(LinearLayout.vertical().spacing(6));
 			header.defaultCellSetting().alignHorizontallyCenter();
-			header.addChild(new StringWidget(this.title, this.font));
+			header.addChild(new StringWidget(this.styledTitle(), this.font));
 			String previousSearch = this.search != null ? this.search.getValue() : "";
 			this.search = header.addChild(new EditBox(this.font, 0, 0, SEARCH_WIDTH, 15, Component.translatable("tweakswitch.search")));
-			this.search.setHint(Component.translatable("tweakswitch.search").withStyle(EditBox.SEARCH_HINT_STYLE));
+			// Drawn on our own rounded box (see extractBackground) instead of vanilla's black field
+			this.search.setBordered(false);
+			this.search.setTextColor(this.theme().text());
+			this.search.setHint(Component.translatable("tweakswitch.search").withColor(this.theme().muted()));
 			this.search.setValue(previousSearch);
 			this.search.setResponder(value -> {
 				this.refreshList();
@@ -60,9 +77,9 @@ public abstract class PackListScreen extends Screen {
 				}
 			});
 		} else {
-			this.layout.addTitleHeader(this.title, this.font);
+			this.layout.addTitleHeader(this.styledTitle(), this.font);
 		}
-		this.list = this.layout.addToContents(new PackList(this.minecraft, this.width, this.layout.getContentHeight(), this.layout.getHeaderHeight()));
+		this.list = this.layout.addToContents(new PackList(this.minecraft, this.theme(), this.width, this.layout.getContentHeight(), this.layout.getHeaderHeight()));
 		this.addFooter();
 		this.layout.visitWidgets(this::addRenderableWidget);
 		this.repositionElements();
@@ -98,6 +115,30 @@ public abstract class PackListScreen extends Screen {
 			// Text wrapping and grid columns depend on the width
 			this.refreshList();
 		}
+	}
+
+	/** The theme's background, darker bars behind the header and footer, and a rounded box behind the search text. */
+	@Override
+	public void extractBackground(final GuiGraphicsExtractor graphics, final int mouseX, final int mouseY, final float a) {
+		Theme theme = this.theme();
+		graphics.fill(0, 0, this.width, this.height, theme.background());
+		graphics.fill(0, 0, this.width, this.layout.getHeaderHeight(), theme.bar());
+		graphics.fill(0, this.height - this.layout.getFooterHeight(), this.width, this.height, theme.bar());
+		if (this.search != null) {
+			boolean focused = this.search.isFocused();
+			Draw.roundRectOutlined(graphics, this.search.getX() - 5, this.search.getY() - 4, this.search.getWidth() + 10, this.search.getHeight() + 2, 5,
+				theme.card(), focused ? theme.accent() : theme.border());
+		}
+	}
+
+	/** Makes a bottom-bar button in this screen's theme. */
+	protected ThemedButton button(final Component label, final int width, final Button.OnPress onPress) {
+		return ThemedButton.secondary(this.theme(), label, width, onPress);
+	}
+
+	/** Makes the main bottom-bar button, filled with the theme's accent color. */
+	protected ThemedButton primaryButton(final Component label, final int width, final Button.OnPress onPress) {
+		return ThemedButton.primary(this.theme(), label, width, onPress);
 	}
 
 	@Override
@@ -136,8 +177,7 @@ public abstract class PackListScreen extends Screen {
 		final PackList list, final Set<String> toggled, final boolean openByDefault, final String name, final String count, final Runnable addRows
 	) {
 		boolean open = this.isSearching() || openByDefault != toggled.contains(name);
-		Component label = Component.literal((open ? "▼ " : "▶ ") + name + " ").append(Component.literal("(" + count + ")").withStyle(ChatFormatting.GRAY));
-		list.addRow(Button.builder(label, button -> {
+		list.addRow(new SectionHeader(this.theme(), name, count, open, () -> {
 			if (this.isSearching()) {
 				return;
 			}
@@ -145,7 +185,7 @@ public abstract class PackListScreen extends Screen {
 				toggled.add(name);
 			}
 			this.queueRefresh();
-		}).build());
+		}), 18);
 		if (open) {
 			addRows.run();
 		}

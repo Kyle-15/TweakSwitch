@@ -108,6 +108,15 @@ public final class VanillaTweaks {
 		return html.replaceAll("(?i)<br\\s*/?>", "\n").replaceAll("<[^>]*>", "").replace("&amp;", "&").replace("&nbsp;", " ").trim();
 	}
 
+	/** The small square icon the website shows on each pack's tile. */
+	public static String iconUrl(final VtPack pack) {
+		return iconUrl(pack.id());
+	}
+
+	public static String iconUrl(final String packId) {
+		return BASE + "/assets/resources/icons/resourcepacks/" + siteVersion() + "/" + URLEncoder.encode(packId, StandardCharsets.UTF_8) + ".png";
+	}
+
 	/** The picture the website shows when you hover a pack. */
 	public static String previewUrl(final VtPack pack) {
 		String extension = pack.previewExtension() != null ? pack.previewExtension() : "png";

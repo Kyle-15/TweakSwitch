@@ -64,5 +64,6 @@
 	"tweakswitch.updates.detail.vanillaTweaks": "Vanilla Tweaks packs don't have version numbers. Pick it to download it again and get any changes since you downloaded it.",
 	"tweakswitch.updates.detail.upToDate": "You have the newest version (%s).",
 	"tweakswitch.updates.detail.noVersion": "Installed: %s. Modrinth has no version of this pack for Minecraft %s.",
-	"tweakswitch.updates.detail.unknown": "This file isn't on Modrinth or Vanilla Tweaks, so it can't be checked for updates."
+	"tweakswitch.updates.detail.unknown": "This file isn't on Modrinth or Vanilla Tweaks, so it can't be checked for updates.",
+	"tweakswitch.mr.sortBy": "Sort: %s"
 }

@@ -13,7 +13,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Stream;
 import net.minecraft.ChatFormatting;
-import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
@@ -162,9 +161,9 @@ public class UpdatesScreen extends DownloadScreen<UpdatesScreen.Item> {
 	@Override
 	protected void addFooter() {
 		this.addFooterButtons(
-			Button.builder(Component.translatable("tweakswitch.updates.checkAgain"), button -> this.check()).width(100).build(),
+			this.button(Component.translatable("tweakswitch.updates.checkAgain"), 100, button -> this.check()),
 			this.createDownloadButton(),
-			Button.builder(CommonComponents.GUI_DONE, button -> this.onClose()).width(80).build()
+			this.button(CommonComponents.GUI_DONE, 80, button -> this.onClose())
 		);
 	}
 

@@ -10,9 +10,12 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
+import com.tweakswitch.ui.ProjectCard;
+import com.tweakswitch.ui.Theme;
+import com.tweakswitch.ui.ThemedButton;
+import java.util.function.BooleanSupplier;
 import net.minecraft.ChatFormatting;
-import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.CycleButton;
+import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.screens.ConfirmLinkScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.CommonComponents;
@@ -119,15 +122,19 @@ public class ModrinthScreen extends DownloadScreen<Modrinth.Project> {
 	@Override
 	protected void addFooter() {
 		this.addFooterButtons(
-			CycleButton.builder((Modrinth.Sort value) -> Component.translatable("tweakswitch.mr.sort." + value.name().toLowerCase(Locale.ROOT)), sort)
-				.withValues(List.of(Modrinth.Sort.values()))
-				.create(0, 0, 120, 20, Component.translatable("tweakswitch.mr.sort"), (button, value) -> {
-					sort = value;
-					this.search(false);
-				}),
+			// Cycles through the sort orders, like Modrinth's "Sort by" dropdown
+			new ThemedButton(this.theme(), ThemedButton.Kind.SECONDARY, Component.empty(), 120, button -> {
+				sort = Modrinth.Sort.values()[(sort.ordinal() + 1) % Modrinth.Sort.values().length];
+				this.search(false);
+			}) {
+				@Override
+				public Component getMessage() {
+					return Component.translatable("tweakswitch.mr.sortBy", Component.translatable("tweakswitch.mr.sort." + sort.name().toLowerCase(Locale.ROOT)));
+				}
+			},
 			this.createDownloadButton(),
-			Button.builder(Component.translatable("tweakswitch.website"), ConfirmLinkScreen.confirmLink(this, Modrinth.SITE)).width(70).build(),
-			Button.builder(CommonComponents.GUI_DONE, button -> this.onClose()).width(70).build()
+			this.button(Component.translatable("tweakswitch.website"), 70, ConfirmLinkScreen.confirmLink(this, Modrinth.SITE)),
+			this.button(CommonComponents.GUI_DONE, 70, button -> this.onClose())
 		);
 	}
 
@@ -149,7 +156,7 @@ public class ModrinthScreen extends DownloadScreen<Modrinth.Project> {
 		list.addText(Component.translatable("tweakswitch.mr.results", String.format(Locale.ROOT, "%,d", totalHits)).withStyle(ChatFormatting.GRAY));
 		Set<String> downloaded = this.downloadedFiles();
 		for (Modrinth.Project project : results) {
-			list.addRow(this.createRow(project, downloaded));
+			list.addRow(this.createRow(project, downloaded), ProjectCard.HEIGHT);
 		}
 
 		if (loading) {
@@ -157,8 +164,32 @@ public class ModrinthScreen extends DownloadScreen<Modrinth.Project> {
 		} else if (loadError != null) {
 			list.addText(Component.translatable("tweakswitch.loadFailed", loadError).withStyle(ChatFormatting.RED));
 		} else if (results.size() < totalHits) {
-			list.addRow(Button.builder(Component.translatable("tweakswitch.mr.more"), button -> this.search(true)).build());
+			list.addRow(this.button(Component.translatable("tweakswitch.mr.more"), 150, button -> this.search(true)));
 		}
+	}
+
+	@Override
+	protected Theme theme() {
+		return Theme.MODRINTH;
+	}
+
+	/** Their green on "Modrinth", then the page name, like the site's header. */
+	@Override
+	protected Component styledTitle() {
+		return Component.literal("Modrinth").withStyle(style -> style.withBold(true).withColor(Theme.MODRINTH.accent()))
+			.append(Component.literal("  Resource Packs for " + Modrinth.gameVersion()).withColor(Theme.MODRINTH.text()));
+	}
+
+	/** A card like Modrinth's search results: icon, title and author, summary, tags and download count. */
+	@Override
+	protected AbstractWidget createPackWidget(final Modrinth.Project project, final boolean done, final BooleanSupplier picked, final Runnable toggle) {
+		// Only known once the pack has been hovered; looking up every result would cost two API calls each
+		Modrinth.Requirements requirements = Modrinth.knownRequirements(project);
+		boolean needsMods = requirements != null && !requirements.missingMods().isEmpty();
+		return new ProjectCard(this.theme(), project.title(), project.author(), project.description(), compact(project.downloads()),
+			project.categories().stream().filter(tag -> !tag.equals("minecraft")).toList(),
+			() -> project.iconUrl() != null ? RemoteImages.getIcon(project.iconUrl()).textureAt(0) : null,
+			picked, done, needsMods, toggle);
 	}
 
 	@Override

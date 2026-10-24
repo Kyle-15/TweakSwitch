@@ -4,8 +4,6 @@ import java.util.List;
 import java.util.Map;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.components.AbstractWidget;
-import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.ConfirmLinkScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.CommonComponents;
@@ -18,9 +16,15 @@ public class ModsNeededScreen extends PackListScreen {
 
 	/** @param missing pack name → the mods it needs that aren't installed */
 	public ModsNeededScreen(final Screen lastScreen, final Map<String, List<Modrinth.LinkedProject>> missing, final Runnable onDownload) {
-		super(lastScreen, Component.translatable("tweakswitch.mods.title").withStyle(ChatFormatting.GOLD));
+		super(lastScreen, Component.translatable("tweakswitch.mods.title"));
 		this.missing = missing;
 		this.onDownload = onDownload;
+	}
+
+	/** The title in amber, as a warning. */
+	@Override
+	protected Component styledTitle() {
+		return this.title.copy().withStyle(style -> style.withBold(true).withColor(0xFFFFC857));
 	}
 
 	@Override
@@ -32,12 +36,11 @@ public class ModsNeededScreen extends PackListScreen {
 	protected void fillList(final PackList list) {
 		list.addText(Component.translatable("tweakswitch.mods.explain").withStyle(ChatFormatting.GRAY));
 		this.missing.forEach((pack, mods) -> {
-			list.addText(Component.translatable("tweakswitch.mods.needs", pack));
+			list.addText(Component.translatable("tweakswitch.mods.needs", pack).withColor(this.theme().text()));
 			List<AbstractWidget> links = mods.stream()
-				.<AbstractWidget>map(mod -> Button.builder(Component.literal(mod.title() + " ↗").withStyle(ChatFormatting.AQUA), button ->
+				.<AbstractWidget>map(mod -> this.button(Component.literal(mod.title() + " ↗"), 150, button ->
 						ConfirmLinkScreen.confirmLinkNow(this, mod.downloadPage(), true))
-					.tooltip(Tooltip.create(Component.literal(mod.downloadPage().toString())))
-					.build())
+					.withTooltip(Component.literal(mod.downloadPage().toString())))
 				.toList();
 			list.addGrid(links, 2);
 		});
@@ -46,11 +49,11 @@ public class ModsNeededScreen extends PackListScreen {
 	@Override
 	protected void addFooter() {
 		this.addFooterButtons(
-			Button.builder(Component.translatable("tweakswitch.mods.downloadAnyway"), button -> {
+			this.primaryButton(Component.translatable("tweakswitch.mods.downloadAnyway"), 150, button -> {
 				this.minecraft.gui.setScreen(this.lastScreen);
 				this.onDownload.run();
-			}).width(150).build(),
-			Button.builder(CommonComponents.GUI_BACK, button -> this.onClose()).width(100).build()
+			}),
+			this.button(CommonComponents.GUI_BACK, 100, button -> this.onClose())
 		);
 	}
 }

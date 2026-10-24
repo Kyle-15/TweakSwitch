@@ -172,6 +172,11 @@ public final class Modrinth {
 		return new Page(projects, result.get("total_hits").getAsInt());
 	}
 
+	/** Requirements if already looked up this session, without starting a lookup. */
+	public static @Nullable Requirements knownRequirements(final Project project) {
+		return REQUIREMENTS.get(project.id());
+	}
+
 	/** Requirements if already looked up this session; otherwise starts looking them up and returns null. */
 	public static @Nullable Requirements cachedRequirements(final Project project) {
 		Requirements requirements = REQUIREMENTS.get(project.id());

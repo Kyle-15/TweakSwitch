@@ -51,6 +51,14 @@ public final class RemoteImages {
 		thread.setDaemon(true);
 		return thread;
 	});
+	/** Icons are small and many show at once, so they load in parallel and are never skipped. */
+	private static final ExecutorService ICON_LOADER = Executors.newFixedThreadPool(3, runnable -> {
+		Thread thread = new Thread(runnable, "TweakSwitch icons");
+		thread.setDaemon(true);
+		return thread;
+	});
+	private static final int MAX_ICON_WIDTH = 64;
+
 	/** Only the most recently requested image is worth loading; older queued requests are skipped. */
 	private static volatile @Nullable String wanted;
 
@@ -121,6 +129,26 @@ public final class RemoteImages {
 		return Image.LOADING;
 	}
 
+	/** Like {@link #get}, for small icons in a list: every requested icon loads, several at a time. */
+	public static Image getIcon(final String url) {
+		Image image = IMAGES.get(url);
+		if (image != null) {
+			return image;
+		}
+		IMAGES.put(url, Image.LOADING);
+		ICON_LOADER.execute(() -> {
+			try {
+				byte[] bytes = WebClient.getBytes(URI.create(url));
+				List<RawFrame> frames = List.of(decodeStill(bytes, MAX_ICON_WIDTH));
+				Minecraft.getInstance().execute(() -> store(url, frames));
+			} catch (Throwable e) {
+				LOGGER.debug("Couldn't load icon {}", url, e);
+				Minecraft.getInstance().execute(() -> IMAGES.put(url, Image.FAILED));
+			}
+		});
+		return Image.LOADING;
+	}
+
 	private static void store(final String url, final List<RawFrame> raw) {
 		List<Frame> frames = new ArrayList<>();
 		int duration = 0;
@@ -157,6 +185,11 @@ public final class RemoteImages {
 		if (bytes.length > 6 && bytes[0] == 'G' && bytes[1] == 'I' && bytes[2] == 'F') {
 			return decodeGif(bytes);
 		}
+		return List.of(decodeStill(bytes, MAX_WIDTH));
+	}
+
+	/** The first frame of any supported image, shrunk to at most {@code maxWidth} wide. */
+	private static RawFrame decodeStill(final byte[] bytes, final int maxWidth) throws IOException {
 		boolean webp = bytes.length > 12 && bytes[0] == 'R' && bytes[1] == 'I' && bytes[2] == 'F' && bytes[3] == 'F' && bytes[8] == 'W' && bytes[9] == 'E' && bytes[10] == 'B' && bytes[11] == 'P';
 		BufferedImage image;
 		if (webp) {
@@ -176,7 +209,7 @@ public final class RemoteImages {
 		}
 		int width = image.getWidth();
 		int height = image.getHeight();
-		return List.of(new RawFrame(shrink(image.getRGB(0, 0, width, height, null, 0, width), width, height, MAX_WIDTH), 0));
+		return new RawFrame(shrink(image.getRGB(0, 0, width, height, null, 0, width), width, height, maxWidth), 0);
 	}
 
 	/**
