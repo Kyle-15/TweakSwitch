@@ -8,10 +8,13 @@ import java.net.http.HttpResponse;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
+import net.fabricmc.loader.api.FabricLoader;
 
 /** One HTTP client for every site TweakSwitch talks to, so they all see the same User-Agent. Calls block. */
 public final class WebClient {
-	public static final String USER_AGENT = "TweakSwitch/1.0 (personal Minecraft mod)";
+	/** Names the project and where to reach its author, as Modrinth's API asks of apps. */
+	public static final String USER_AGENT = "Kyle-15/TweakSwitch/" + FabricLoader.getInstance().getModContainer(TweakSwitch.MOD_ID).map(mod -> mod.getMetadata().getVersion().getFriendlyString()).orElse("dev")
+		+ " (https://github.com/Kyle-15/TweakSwitch)";
 	private static final HttpClient HTTP = HttpClient.newBuilder()
 		.connectTimeout(Duration.ofSeconds(15))
 		.followRedirects(HttpClient.Redirect.NORMAL)
