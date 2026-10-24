@@ -45,3 +45,6 @@ logs/
 
 # files for uploading to Modrinth (screenshots, page text)
 modrinth-upload/
+
+# modpack made for sharing, not part of the mod
+friend-modpack/

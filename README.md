@@ -11,7 +11,7 @@ A Fabric mod for Minecraft 26.3 that turns resource packs into simple on/off swi
 
 ## Install
 
-1. Install [Fabric Loader](https://fabricmc.net/use/installer/) for Minecraft **26.3** (loader 0.20.1 or newer).
+1. Install [Fabric Loader](https://fabricmc.net/use/installer/) for Minecraft **26.3** (loader 0.19.5 or newer).
 2. Download these into your `.minecraft/mods` folder:
    - **TweakSwitch:** the `.jar` from this repo's [Releases](../../releases) page
    - **[Fabric API](https://modrinth.com/mod/fabric-api)** for 26.3 (required)
