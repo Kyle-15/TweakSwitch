@@ -82,7 +82,8 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 			expanded.add("Aesthetic");
 			refresh(minecraft);
 		});
-		context.waitTicks(5);
+		// Pack icons load from the site in the background
+		context.waitTicks(60);
 		context.takeScreenshot("tweakswitch-small-picker");
 		context.setScreen(() -> new ModrinthScreen(new TweakSwitchScreen(null)));
 		context.waitFor(minecraft -> !rows(minecraft).isEmpty(), 600);
