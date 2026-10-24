@@ -12,7 +12,7 @@
 		"sources": "https://github.com/Kyle-15/TweakSwitch",
 		"issues": "https://github.com/Kyle-15/TweakSwitch/issues"
 	},
-	"license": "All-Rights-Reserved",
+	"license": "MIT",
 	"icon": "assets/tweakswitch/icon.png",
 	"environment": "client",
 	"entrypoints": {

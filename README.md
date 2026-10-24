@@ -35,6 +35,19 @@ Needs Java 25.
 
 The mod jar ends up in `build/libs/`. `./gradlew runClientGameTest` runs the in-game screenshot test (needs internet).
 
+## Network use
+
+TweakSwitch only goes online when you open its download or update screens:
+
+- **Vanilla Tweaks** (vanillatweaks.net): loads the pack list and previews, and asks the site to build each pack you download.
+- **Modrinth** (api.modrinth.com, cdn.modrinth.com): searches, previews and downloads. The Updates screen sends the SHA-1 hashes of the pack files in your TweakSwitch folder so Modrinth can say which have newer versions.
+
+No account, name or other personal information is sent.
+
+## License
+
+MIT, see [LICENSE](LICENSE). Bundled libraries are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ## Credits
 
 - Packs from [Vanilla Tweaks](https://vanillatweaks.net/) are downloaded straight from their site and not included in this mod. Credit for those packs goes to Vanilla Tweaks.
