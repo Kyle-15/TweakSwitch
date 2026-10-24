@@ -3,6 +3,7 @@ package com.tweakswitch;
 import com.mojang.logging.LogUtils;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.Consumer;
 import net.minecraft.ChatFormatting;
@@ -45,20 +46,27 @@ public class TweakSwitchPackSource implements RepositorySource {
 		return pack.getId().substring(ID_PREFIX.length());
 	}
 
+	/** "VT - Steve Zombies.zip" → "Steve Zombies"; downloads are grouped by source already, so the prefix is noise. */
+	private static String titleFromFileName(final String fileName) {
+		String title = fileName.endsWith(".zip") ? fileName.substring(0, fileName.length() - 4) : fileName;
+		for (String prefix : new String[] {VanillaTweaks.FILE_PREFIX, Modrinth.FILE_PREFIX}) {
+			if (title.startsWith(prefix)) {
+				return title.substring(prefix.length());
+			}
+		}
+		return title;
+	}
+
 	@Override
 	public void loadPacks(final Consumer<Pack> result) {
 		Path folder = TweakSwitch.packsDir();
 		try {
 			FileUtil.createDirectoriesSafe(folder);
+			Map<String, PackIndex.Entry> index = PackIndex.load();
 			FolderRepositorySource.discoverPacks(folder, Minecraft.getInstance().directoryValidator(), (content, resources) -> {
 				String fileName = content.getFileName().toString();
-				String title = fileName.endsWith(".zip") ? fileName.substring(0, fileName.length() - 4) : fileName;
-				// Downloads are already grouped under their source's category, so the "VT - " / "MR - " file prefix is just noise
-				for (String prefix : new String[] {VanillaTweaks.FILE_PREFIX, Modrinth.FILE_PREFIX}) {
-					if (title.startsWith(prefix)) {
-						title = title.substring(prefix.length());
-					}
-				}
+				PackIndex.Entry entry = index.get(fileName);
+				String title = entry != null && entry.title() != null ? entry.title() : titleFromFileName(fileName);
 				PackLocationInfo location = new PackLocationInfo(ID_PREFIX + fileName, Component.literal(title), SOURCE, Optional.empty());
 				Pack pack = Pack.readMetaAndCreate(location, resources, PackType.CLIENT_RESOURCES, SELECTION_CONFIG);
 				if (pack != null) {

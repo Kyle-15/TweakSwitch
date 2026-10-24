@@ -112,8 +112,8 @@ public class UpdatesScreen extends DownloadScreen<UpdatesScreen.Item> {
 		for (Map.Entry<String, Path> file : byHash.entrySet()) {
 			String hash = file.getKey();
 			String fileName = file.getValue().getFileName().toString();
-			String title = displayTitle(fileName);
 			PackIndex.Entry entry = index.get(fileName);
+			String title = entry != null && entry.title() != null ? entry.title() : displayTitle(fileName);
 			Modrinth.Version installed = modrinth.current().get(hash);
 			Modrinth.Version latest = modrinth.latest().get(hash);
 
@@ -221,6 +221,11 @@ public class UpdatesScreen extends DownloadScreen<UpdatesScreen.Item> {
 			return item.title() + "  " + item.installedVersion() + " → " + item.latest().number();
 		}
 		return item.installedVersion() != null ? item.title() + "  " + item.installedVersion() : item.title();
+	}
+
+	@Override
+	protected String switchTitle(final Item item) {
+		return item.entry() != null && item.entry().title() != null ? item.entry().title() : item.title();
 	}
 
 	@Override

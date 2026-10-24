@@ -67,6 +67,11 @@ public abstract class DownloadScreen<T> extends PackListScreen {
 	/** The file the pack is saved as in the TweakSwitch folder; used to tell which packs are already downloaded. */
 	protected abstract String fileName(T pack);
 
+	/** The name its switch shows on the TweakSwitch screen. */
+	protected String switchTitle(final T pack) {
+		return this.displayName(pack);
+	}
+
 	/** Where the downloaded file came from, saved in {@link PackIndex} for the switch screen and for updates. */
 	protected abstract PackIndex.Entry indexEntry(T pack);
 
@@ -193,7 +198,7 @@ public abstract class DownloadScreen<T> extends PackListScreen {
 				try {
 					Files.createDirectories(folder);
 					this.download(pack, folder);
-					PackIndex.put(this.fileName(pack), this.indexEntry(pack));
+					PackIndex.put(this.fileName(pack), this.indexEntry(pack).withTitle(this.switchTitle(pack)));
 					succeeded.add(pack);
 				} catch (Exception e) {
 					LOGGER.warn("Failed to download pack {}", this.id(pack), e);

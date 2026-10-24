@@ -42,3 +42,6 @@ replay_*.log
 
 # game logs from test runs
 logs/
+
+# files for uploading to Modrinth (screenshots, page text)
+modrinth-upload/

@@ -140,6 +140,8 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		context.clickScreenButton("gui.done");
 		context.waitForScreen(TweakSwitchScreen.class);
 		context.waitTicks(5);
+		context.runOnClient(minecraft -> minecraft.gui.toastManager().clear());
+		context.waitTicks(2);
 		context.takeScreenshot("tweakswitch-switches-downloaded");
 
 		// Modrinth: search results load, a hovered pack shows its picture, and a picked pack downloads as a switch
@@ -147,6 +149,8 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		context.waitForScreen(ModrinthScreen.class);
 		context.waitFor(minecraft -> !rows(minecraft).isEmpty(), 600);
 		context.waitTicks(5);
+		context.runOnClient(minecraft -> minecraft.gui.toastManager().clear());
+		context.waitTicks(2);
 		context.takeScreenshot("tweakswitch-modrinth-results");
 		AbstractWidget firstResult = context.computeOnClient(minecraft -> rows(minecraft).keySet().stream()
 			.filter(widget -> widget.getY() > 40 && widget.getY() < 100)
@@ -167,6 +171,8 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		context.waitFor(minecraft -> field(DownloadScreen.class, null, "progress") == null, 1200);
 		context.getInput().setCursorPos(0, 0);
 		context.waitTicks(10);
+		context.runOnClient(minecraft -> minecraft.gui.toastManager().clear());
+		context.waitTicks(2);
 		context.takeScreenshot("tweakswitch-modrinth-downloaded");
 		// A pack needing a mod brings up the warning with links; a pack needing another pack pulls it in too.
 		// Fresh Animations is deleted first so Extensions has to bring it back.
@@ -177,6 +183,8 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		context.runOnClient(minecraft -> ((Button) field(DownloadScreen.class, minecraft.gui.screen(), "downloadButton")).onPress(null));
 		context.waitForScreen(ModsNeededScreen.class);
 		context.waitTicks(5);
+		context.runOnClient(minecraft -> minecraft.gui.toastManager().clear());
+		context.waitTicks(2);
 		context.takeScreenshot("tweakswitch-mods-needed");
 		context.clickScreenButton("tweakswitch.mods.downloadAnyway");
 		context.waitForScreen(ModrinthScreen.class);
@@ -190,7 +198,15 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		context.clickScreenButton("gui.done");
 		context.waitForScreen(TweakSwitchScreen.class);
 		context.waitTicks(5);
+		context.runOnClient(minecraft -> minecraft.gui.toastManager().clear());
+		context.waitTicks(2);
 		context.takeScreenshot("tweakswitch-switches-with-modrinth");
+		// The switch shows the pack's real name, even though ":" can't go in the file name
+		boolean realName = context.computeOnClient(minecraft -> minecraft.getResourcePackRepository().getAvailablePacks().stream()
+			.anyMatch(pack -> pack.getTitle().getString().equals("Fresh Animations: Extensions")));
+		if (!realName) {
+			throw new AssertionError("Switch for Fresh Animations: Extensions doesn't show its real name");
+		}
 
 		// Updates: swap Fresh Animations for an older version, then update it back
 		String newSha1 = sha1(packs.resolve("MR - Fresh Animations.zip"));
@@ -202,11 +218,15 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		context.waitForScreen(UpdatesScreen.class);
 		context.waitFor(minecraft -> field(UpdatesScreen.class, minecraft.gui.screen(), "items") != null, 1200);
 		context.waitTicks(5);
+		context.runOnClient(minecraft -> minecraft.gui.toastManager().clear());
+		context.waitTicks(2);
 		context.takeScreenshot("tweakswitch-updates");
 		context.runOnClient(minecraft -> ((Button) field(DownloadScreen.class, minecraft.gui.screen(), "downloadButton")).onPress(null));
 		context.waitFor(minecraft -> field(DownloadScreen.class, null, "progress") == null
 			&& field(UpdatesScreen.class, minecraft.gui.screen(), "items") != null, 1200);
 		context.waitTicks(5);
+		context.runOnClient(minecraft -> minecraft.gui.toastManager().clear());
+		context.waitTicks(2);
 		context.takeScreenshot("tweakswitch-updates-done");
 		if (!sha1(packs.resolve("MR - Fresh Animations.zip")).equals(newSha1)) {
 			throw new AssertionError("Fresh Animations wasn't updated to the newest version");

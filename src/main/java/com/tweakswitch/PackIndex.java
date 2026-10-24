@@ -24,8 +24,18 @@ public final class PackIndex {
 	public static final String VANILLA_TWEAKS = "vanillatweaks";
 	public static final String MODRINTH = "modrinth";
 
-	/** @param source {@link #VANILLA_TWEAKS} or {@link #MODRINTH}; id is that site's id for the pack */
-	public record Entry(String category, @Nullable String source, @Nullable String id) {
+	/**
+	 * @param source {@link #VANILLA_TWEAKS} or {@link #MODRINTH}; id is that site's id for the pack
+	 * @param title  the pack's real name, which file names can't always hold (e.g. a ":")
+	 */
+	public record Entry(String category, @Nullable String source, @Nullable String id, @Nullable String title) {
+		public Entry(final String category, final @Nullable String source, final @Nullable String id) {
+			this(category, source, id, null);
+		}
+
+		public Entry withTitle(final String title) {
+			return new Entry(this.category, this.source, this.id, title);
+		}
 	}
 
 	private PackIndex() {
