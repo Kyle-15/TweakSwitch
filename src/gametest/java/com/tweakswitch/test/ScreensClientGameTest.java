@@ -457,7 +457,7 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 	private static void writeCodexStylePacks(final Path folder) {
 		try {
 			byte[] logo = png(16, (x, y) -> (x / 4 + y / 4) % 2 == 0 ? 0xFF7A3DD6 : 0xFF2B1A52);
-			String meta = "{\"pack\":{\"description\":\"Crystal Vanilla Tweaks | %s\",\"min_format\":84,\"max_format\":97}}";
+			String meta = "{\"pack\":{\"description\":\"Split particle pack | %s\",\"min_format\":84,\"max_format\":97}}";
 			String[][] particles = {
 				{"dripping-lava", "dripping_lava", "drip_hang_lava"},
 				{"dripping-water", "dripping_water", "drip_hang_water"},
