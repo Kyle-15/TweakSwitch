@@ -40,7 +40,9 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.AbstractButton;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.server.packs.repository.Pack;
 
 /**
  * Walks through the TweakSwitch screens, downloading two real packs from Vanilla Tweaks, and saves screenshots to
@@ -72,6 +74,28 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		context.setScreen(() -> new TweakSwitchScreen(null));
 		context.waitTicks(5);
 		context.takeScreenshot("tweakswitch-switches-empty");
+
+		// A wide window: the header row should sit in the middle, not stuck to the left
+		context.getInput().resizeWindow(1600, 600);
+		context.runOnClient(minecraft -> {
+			minecraft.options.guiScale().set(2);
+			minecraft.resizeGui();
+		});
+		context.waitTicks(5);
+		context.takeScreenshot("tweakswitch-wide-header");
+		int[] header = context.computeOnClient(minecraft -> {
+			EditBox search = (EditBox) field(PackListScreen.class, minecraft.gui.screen(), "search");
+			return new int[] {search.getX(), search.getRight(), minecraft.gui.screen().width};
+		});
+		if (header[0] < header[2] / 4) {
+			throw new AssertionError("Header looks stuck to the left: search starts at " + header[0] + " of " + header[2]);
+		}
+		context.getInput().resizeWindow(854, 480);
+		context.runOnClient(minecraft -> {
+			minecraft.options.guiScale().set(0);
+			minecraft.resizeGui();
+		});
+		context.waitTicks(3);
 
 		// A small window: text wraps, buttons shrink, Vanilla Tweaks drops to one column
 		// 640x480 at GUI scale 2 is 320 GUI pixels wide, the narrowest Minecraft allows
@@ -148,6 +172,7 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		}
 		context.getInput().setCursorPos(0, 0);
 		context.waitTicks(3);
+
 		context.takeScreenshot("tweakswitch-picker-picked");
 
 		context.runOnClient(minecraft -> ((Button) field(DownloadScreen.class, minecraft.gui.screen(), "downloadButton")).onPress(null));
@@ -272,6 +297,54 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 			throw new AssertionError("Switch for Fresh Animations: Extensions doesn't show its real name");
 		}
 
+		// Packs split from one big pack, like ones made with an AI tool: each holds only a particle definition, they all
+		// share one logo, and the textures live in a separate base pack (or are the game's own)
+		writeCodexStylePacks(packs);
+		context.setScreen(() -> new TweakSwitchScreen(null));
+		Path drippingLava = packs.resolve("particles-dripping-lava.zip");
+		Path composter = packs.resolve("particles-composter.zip");
+		context.waitFor(minecraft -> PackContents.cached(drippingLava) != null && PackContents.cached(composter) != null, 200);
+		if (!"Dripping".equals(PackContents.cached(drippingLava).subject())) {
+			throw new AssertionError("Expected subject Dripping, got " + PackContents.cached(drippingLava).subject());
+		}
+		context.runOnClient(minecraft -> {
+			Settings.get().groupBy = TweakSwitchScreen.GroupBy.CHANGES.name();
+			refresh(minecraft);
+		});
+		// Textures the definitions point to: from the base pack, and the game's own for composter (minecraft:glint)
+		context.waitFor(minecraft -> !PackContents.textures(drippingLava).isEmpty() && !PackContents.textures(composter).isEmpty(), 200);
+		// Search "particles" so the particle groups come into view
+		context.runOnClient(minecraft -> {
+			try {
+				Method method = PackListScreen.class.getDeclaredMethod("setSearchText", String.class);
+				method.setAccessible(true);
+				method.invoke(minecraft.gui.screen(), "particles");
+			} catch (ReflectiveOperationException e) {
+				throw new RuntimeException(e);
+			}
+		});
+		context.waitTicks(5);
+		context.takeScreenshot("tweakswitch-split-packs-grouped");
+		// Narrow to the dripping packs so dripping-lava is on screen to hover
+		context.runOnClient(minecraft -> {
+			try {
+				Method method = PackListScreen.class.getDeclaredMethod("setSearchText", String.class);
+				method.setAccessible(true);
+				method.invoke(minecraft.gui.screen(), "dripping");
+			} catch (ReflectiveOperationException e) {
+				throw new RuntimeException(e);
+			}
+		});
+		context.waitTicks(5);
+		AbstractWidget lavaRow = context.computeOnClient(minecraft -> ((Map<AbstractWidget, Pack>) field(TweakSwitchScreen.class, minecraft.gui.screen(), "switchRows"))
+			.entrySet().stream().filter(entry -> entry.getValue().getTitle().getString().equals("particles-dripping-lava")).findFirst().orElseThrow().getKey());
+		moveTo(context, lavaRow);
+		context.waitTicks(30);
+		context.takeScreenshot("tweakswitch-split-pack-preview");
+		context.getInput().setCursorPos(0, 0);
+		context.runOnClient(minecraft -> Settings.get().groupBy = TweakSwitchScreen.GroupBy.SOURCE.name());
+		context.waitTicks(3);
+
 		// Updates: swap Fresh Animations for an older version, then update it back
 		String newSha1 = sha1(packs.resolve("MR - Fresh Animations.zip"));
 		String oldSha1 = installOlderVersion(packs.resolve("MR - Fresh Animations.zip"));
@@ -356,6 +429,69 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
+	}
+
+	/** Runs {@code refreshList} on the current screen, for checks that change state from outside it. */
+	private static final class PackListScreenTestAccess {
+		static void refresh(final Minecraft minecraft) {
+			ScreensClientGameTest.refresh(minecraft);
+		}
+	}
+
+	/**
+	 * A base pack with the particle textures, plus one pack per particle holding only its definition and the same shared
+	 * logo. particles-composter points at minecraft:glint, which no pack has, so its preview comes from the game itself.
+	 */
+	private static void writeCodexStylePacks(final Path folder) {
+		try {
+			byte[] logo = png(16, (x, y) -> (x / 4 + y / 4) % 2 == 0 ? 0xFF7A3DD6 : 0xFF2B1A52);
+			String meta = "{\"pack\":{\"description\":\"Crystal Vanilla Tweaks | %s\",\"min_format\":84,\"max_format\":97}}";
+			String[][] particles = {
+				{"dripping-lava", "dripping_lava", "drip_hang_lava"},
+				{"dripping-water", "dripping_water", "drip_hang_water"},
+				{"dripping-honey", "dripping_honey", "drip_hang_honey"},
+				{"bubble-pop", "bubble_pop", "bubble_pop_0"},
+				{"composter", "composter", "minecraft:glint"},
+			};
+			int[] colors = {0xFFFF6A00, 0xFF3DA5FF, 0xFFFFC23D, 0xFFB4E6FF};
+			try (ZipOutputStream base = new ZipOutputStream(Files.newOutputStream(folder.resolve("crystal-base.zip")))) {
+				base.putNextEntry(new ZipEntry("pack.mcmeta"));
+				base.write(String.format(meta, "base textures").getBytes(StandardCharsets.UTF_8));
+				for (int i = 0; i < 4; i++) {
+					int color = colors[i];
+					base.putNextEntry(new ZipEntry("assets/minecraft/textures/particle/" + particles[i][2] + ".png"));
+					base.write(png(8, (x, y) -> Math.abs(x - 3.5) + Math.abs(y - 3.5) < 4 ? color : 0));
+				}
+			}
+			for (String[] particle : particles) {
+				try (ZipOutputStream out = new ZipOutputStream(Files.newOutputStream(folder.resolve("particles-" + particle[0] + ".zip")))) {
+					out.putNextEntry(new ZipEntry("pack.mcmeta"));
+					out.write(String.format(meta, "particles " + particle[0].replace('-', ' ')).getBytes(StandardCharsets.UTF_8));
+					out.putNextEntry(new ZipEntry("pack.png"));
+					out.write(logo);
+					out.putNextEntry(new ZipEntry("assets/minecraft/particles/" + particle[1] + ".json"));
+					out.write(("{\"textures\":[\"" + particle[2] + "\"]}").getBytes(StandardCharsets.UTF_8));
+				}
+			}
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
+	}
+
+	private interface Pixels {
+		int color(int x, int y);
+	}
+
+	private static byte[] png(final int size, final Pixels pixels) throws IOException {
+		BufferedImage image = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+		for (int y = 0; y < size; y++) {
+			for (int x = 0; x < size; x++) {
+				image.setRGB(x, y, pixels.color(x, y));
+			}
+		}
+		java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+		ImageIO.write(image, "png", out);
+		return out.toByteArray();
 	}
 
 	/** A resource pack with an empty description and six made-up particle textures, flame.png among them. */

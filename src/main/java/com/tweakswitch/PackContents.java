@@ -2,7 +2,10 @@ package com.tweakswitch;
 
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.logging.LogUtils;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonParser;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -61,9 +64,12 @@ public final class PackContents {
 	/**
 	 * @param counts     files per part of the game it changes
 	 * @param textures   paths inside the pack of textures to preview
+	 * @param referenced textures the pack's particle definitions point to but doesn't contain itself, as asset paths
+	 *                   ("assets/minecraft/textures/particle/drip_hang.png"); found in other packs or the game's own textures
+	 * @param subject    the thing it changes, from its file names ("Dripping" for dripping_lava.json), for sub-groups
 	 * @param searchText lowercase file names inside the pack, so searching "flame" finds packs that change the flame particle
 	 */
-	public record Info(Map<Kind, Integer> counts, List<String> textures, String searchText) {
+	public record Info(Map<Kind, Integer> counts, List<String> textures, List<String> referenced, String subject, String searchText) {
 		/** What it changes most, e.g. {@link Kind#PARTICLES}. */
 		public Kind primary() {
 			return this.counts.entrySet().stream()
@@ -90,6 +96,8 @@ public final class PackContents {
 	}
 
 	private static final Map<Key, Info> INFO = new ConcurrentHashMap<>();
+	/** Which pack in the folder holds each texture (lowercase asset path), for textures other packs point to. */
+	private static final Map<String, Path> TEXTURE_OWNERS = new ConcurrentHashMap<>();
 	private static final Map<Key, List<Identifier>> TEXTURES = new ConcurrentHashMap<>();
 	private static final AtomicInteger NEXT_ID = new AtomicInteger();
 	private static final ExecutorService LOADER = Executors.newSingleThreadExecutor(runnable -> {
@@ -128,7 +136,7 @@ public final class PackContents {
 	public static List<Identifier> textures(final Path pack) {
 		Key key = key(pack);
 		Info info = key != null ? INFO.get(key) : null;
-		if (info == null || info.textures().isEmpty()) {
+		if (info == null || info.textures().isEmpty() && info.referenced().isEmpty()) {
 			return List.of();
 		}
 		List<Identifier> loaded = TEXTURES.get(key);
@@ -138,13 +146,17 @@ public final class PackContents {
 		TEXTURES.put(key, List.of());
 		LOADER.execute(() -> {
 			List<NativeImage> images = new ArrayList<>();
-			readEach(pack, info.textures(), stream -> {
+			StreamConsumer addImage = stream -> {
 				try {
 					images.add(fitForPreview(NativeImage.read(stream)));
 				} catch (IOException e) {
 					// Not a readable PNG: just leave it out
 				}
-			});
+			};
+			readEach(pack, info.textures(), addImage);
+			for (String asset : info.referenced()) {
+				readReferenced(asset, addImage);
+			}
 			Minecraft.getInstance().execute(() -> {
 				List<Identifier> ids = new ArrayList<>();
 				for (NativeImage image : images) {
@@ -156,6 +168,30 @@ public final class PackContents {
 			});
 		});
 		return List.of();
+	}
+
+	/**
+	 * A texture a particle definition points to: from whichever pack in the folder has it, or else the game's current
+	 * resources (vanilla's, or a switched-on pack's).
+	 */
+	private static void readReferenced(final String asset, final StreamConsumer consumer) {
+		Path owner = TEXTURE_OWNERS.get(asset.toLowerCase(Locale.ROOT));
+		if (owner != null) {
+			readEach(owner, List.of(asset), consumer);
+			return;
+		}
+		String rest = asset.substring("assets/".length());
+		Identifier id = Identifier.tryBuild(rest.substring(0, rest.indexOf('/')), rest.substring(rest.indexOf('/') + 1));
+		if (id == null) {
+			return;
+		}
+		Minecraft.getInstance().getResourceManager().getResource(id).ifPresent(resource -> {
+			try (InputStream stream = resource.open()) {
+				consumer.accept(stream);
+			} catch (IOException e) {
+				// Unreadable: leave it out
+			}
+		});
 	}
 
 	private static @Nullable Key key(final Path pack) {
@@ -172,11 +208,13 @@ public final class PackContents {
 			paths = listFiles(pack);
 		} catch (IOException e) {
 			LOGGER.warn("Couldn't look inside pack {}", pack, e);
-			return new Info(Map.of(), List.of(), "");
+			return new Info(Map.of(), List.of(), List.of(), "", "");
 		}
 
 		Map<Kind, Integer> counts = new EnumMap<>(Kind.class);
 		Map<Kind, List<String>> texturesByKind = new EnumMap<>(Kind.class);
+		Map<Kind, List<String>> namesByKind = new EnumMap<>(Kind.class);
+		List<String> particleDefinitions = new ArrayList<>();
 		StringBuilder search = new StringBuilder();
 		for (String path : paths) {
 			String lower = path.toLowerCase(Locale.ROOT);
@@ -190,8 +228,13 @@ public final class PackContents {
 			if (search.length() < 8000) {
 				search.append(dot > 0 ? name.substring(0, dot) : name).append(' ');
 			}
+			namesByKind.computeIfAbsent(kind, k -> new ArrayList<>()).add(dot > 0 ? name.substring(0, dot) : name);
 			if (lower.contains("/textures/") && lower.endsWith(".png")) {
 				texturesByKind.computeIfAbsent(kind, k -> new ArrayList<>()).add(path);
+				TEXTURE_OWNERS.put(lower, pack);
+			}
+			if (lower.contains("/particles/") && lower.endsWith(".json")) {
+				particleDefinitions.add(path);
 			}
 		}
 
@@ -214,7 +257,49 @@ public final class PackContents {
 		for (Kind kind : counts.keySet()) {
 			search.append(kind.label.toLowerCase(Locale.ROOT)).append(' ');
 		}
-		return new Info(counts, List.copyOf(textures), search.toString());
+
+		// Particle definitions name their textures; any the pack doesn't carry itself are looked up elsewhere for the preview
+		List<String> referenced = new ArrayList<>();
+		readEach(pack, particleDefinitions, stream -> {
+			try {
+				JsonElement json = JsonParser.parseString(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
+				if (json.isJsonObject() && json.getAsJsonObject().has("textures")) {
+					for (JsonElement texture : json.getAsJsonObject().getAsJsonArray("textures")) {
+						String id = texture.getAsString();
+						String namespace = id.contains(":") ? id.substring(0, id.indexOf(':')) : "minecraft";
+						String name = id.contains(":") ? id.substring(id.indexOf(':') + 1) : id;
+						String asset = "assets/" + namespace + "/textures/particle/" + name + ".png";
+						if (!textures.contains(asset) && !referenced.contains(asset) && textures.size() + referenced.size() < PREVIEW_TEXTURES) {
+							referenced.add(asset);
+						}
+						search.append(name).append(' ');
+					}
+				}
+			} catch (RuntimeException e) {
+				// Not valid JSON: nothing to follow
+			}
+		});
+
+		Kind primary = counts.entrySet().stream().filter(entry -> entry.getKey() != Kind.OTHER).max(Map.Entry.comparingByValue())
+			.map(Map.Entry::getKey).orElse(Kind.OTHER);
+		return new Info(counts, List.copyOf(textures), List.copyOf(referenced), subject(namesByKind.getOrDefault(primary, List.of())), search.toString());
+	}
+
+	/**
+	 * The most common first word of the changed files' names, so dripping_lava, dripping_water and dripping_honey all make
+	 * "Dripping". Empty if there are no names.
+	 */
+	private static String subject(final List<String> names) {
+		Map<String, Integer> words = new java.util.HashMap<>();
+		for (String name : names) {
+			String word = name.split("[_\\-.]")[0].replaceAll("[0-9]+$", "");
+			if (word.length() > 1) {
+				words.merge(word, 1, Integer::sum);
+			}
+		}
+		return words.entrySet().stream().max(Map.Entry.<String, Integer>comparingByValue().thenComparing(Map.Entry.comparingByKey()))
+			.map(entry -> Character.toUpperCase(entry.getKey().charAt(0)) + entry.getKey().substring(1))
+			.orElse("");
 	}
 
 	/** Which part of the game a file under assets/ changes, from where it sits. */

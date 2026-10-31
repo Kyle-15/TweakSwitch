@@ -9,7 +9,9 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
+import java.security.MessageDigest;
 import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -20,6 +22,7 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import com.mojang.blaze3d.platform.NativeImage;
+import com.tweakswitch.ui.SectionHeader;
 import com.tweakswitch.ui.SwitchRow;
 import com.tweakswitch.ui.ThemedButton;
 import net.minecraft.client.gui.components.AbstractWidget;
@@ -48,6 +51,10 @@ public class TweakSwitchScreen extends PackListScreen {
 	private final PackRepository repository;
 	private static final Identifier UNKNOWN_PACK_ICON = Identifier.withDefaultNamespace("textures/misc/unknown_pack.png");
 	private static final Map<String, Identifier> PACK_ICONS = new HashMap<>();
+	/** SHA-1 of each pack's pack.png, by pack id, to spot packs that all share one logo. */
+	private static final Map<String, String> PACK_ICON_HASHES = new HashMap<>();
+	/** Packs sharing an icon with this many others or more use one of their textures as the icon instead. */
+	private static final int SHARED_ICON_THRESHOLD = 3;
 	/** Categories the player collapsed; kept for the session. */
 	private static final Set<String> COLLAPSED = new HashSet<>();
 
@@ -79,6 +86,10 @@ public class TweakSwitchScreen extends PackListScreen {
 
 	/** Where each downloaded pack came from, read when the list is built. */
 	private Map<String, PackIndex.Entry> index = Map.of();
+	/** Between a group and its sub-group in "Changes" mode. */
+	private static final String SUBGROUP = " · ";
+	/** Icon hashes used by {@link #SHARED_ICON_THRESHOLD} or more packs, worked out when the list is built. */
+	private Set<String> sharedIconHashes = Set.of();
 	/** Which pack each switch row shows, for the Shift preview. */
 	private final Map<AbstractWidget, Pack> switchRows = new HashMap<>();
 	/** Switch state the player has chosen but not yet applied, by pack id. */
@@ -163,23 +174,45 @@ public class TweakSwitchScreen extends PackListScreen {
 		}
 
 		this.index = PackIndex.load();
+		ours.forEach(TweakSwitchScreen::packIcon);
+		Map<String, Long> iconUses = ours.stream().map(pack -> PACK_ICON_HASHES.get(pack.getId())).filter(java.util.Objects::nonNull)
+			.collect(Collectors.groupingBy(hash -> hash, Collectors.counting()));
+		this.sharedIconHashes = iconUses.entrySet().stream().filter(use -> use.getValue() >= SHARED_ICON_THRESHOLD).map(Map.Entry::getKey).collect(Collectors.toSet());
 		Collection<String> selected = this.repository.getSelectedIds();
 		GroupBy groupBy = GroupBy.fromSettings();
 		String last = groupBy == GroupBy.SOURCE ? Component.translatable("tweakswitch.otherPacks").getString() : Component.translatable("tweakswitch.group.unknown").getString();
 		// Sorted by name, with the catch-all group ("Other Packs", "Not looked at yet") last
 		Map<String, List<Pack>> groups = new TreeMap<>(Comparator.comparing((String name) -> name.equals(last)).thenComparing(Comparator.naturalOrder()));
+		// In "Changes" mode, packs about the same thing get their own sub-group ("Particles · Dripping") when there are two or more
+		Map<String, Long> subjects = groupBy != GroupBy.CHANGES ? Map.of() : shown.stream()
+			.map(pack -> PackContents.cached(path(pack)))
+			.filter(contents -> contents != null && !contents.subject().isEmpty())
+			.collect(Collectors.groupingBy(contents -> contents.primary().label + SUBGROUP + contents.subject(), Collectors.counting()));
 		for (Pack pack : shown) {
-			groups.computeIfAbsent(this.groupOf(pack, groupBy, selected, last), name -> new ArrayList<>()).add(pack);
+			String group = this.groupOf(pack, groupBy, selected, last);
+			PackContents.Info contents = groupBy == GroupBy.CHANGES ? PackContents.cached(path(pack)) : null;
+			if (contents != null && subjects.getOrDefault(group + SUBGROUP + contents.subject(), 0L) >= 2) {
+				group = group + SUBGROUP + contents.subject();
+			}
+			groups.computeIfAbsent(group, name -> new ArrayList<>()).add(pack);
 		}
 
 		groups.forEach((group, packs) -> {
 			long on = packs.stream().filter(pack -> this.isOn(pack, selected)).count();
 			String count = groupBy == GroupBy.STATUS ? Integer.toString(packs.size()) : on + "/" + packs.size() + " on";
+			// The header's own switch turns the whole group on, or off if it's all on already
+			SectionHeader.BulkSwitch bulk = new SectionHeader.BulkSwitch(
+				() -> packs.stream().allMatch(pack -> this.isOn(pack, this.repository.getSelectedIds())),
+				() -> {
+					boolean allOn = packs.stream().allMatch(pack -> this.isOn(pack, this.repository.getSelectedIds()));
+					packs.forEach(pack -> this.pending.put(pack.getId(), !allOn));
+					this.queueRefresh();
+				});
 			this.addCategory(list, COLLAPSED, true, group, count, () -> packs.forEach(pack -> {
 				SwitchRow row = this.createSwitch(pack);
 				this.switchRows.put(row, pack);
 				list.addRow(row, SwitchRow.HEIGHT);
-			}));
+			}), bulk);
 		});
 	}
 
@@ -264,6 +297,16 @@ public class TweakSwitchScreen extends PackListScreen {
 		Identifier own = packIcon(pack);
 		PackIndex.Entry entry = this.index.get(TweakSwitchPackSource.fileName(pack));
 		if (entry == null || !PackIndex.VANILLA_TWEAKS.equals(entry.source()) || entry.id() == null) {
+			// Packs split from one big pack all carry its logo, and some have no icon at all; for those, a texture the pack
+			// changes tells them apart
+			String hash = PACK_ICON_HASHES.get(pack.getId());
+			if (own == UNKNOWN_PACK_ICON || hash != null && this.sharedIconHashes.contains(hash)) {
+				Path file = path(pack);
+				return () -> {
+					List<Identifier> textures = PackContents.textures(file);
+					return textures.isEmpty() ? own : textures.get(0);
+				};
+			}
 			return () -> own;
 		}
 		String url = VanillaTweaks.iconUrl(entry.id());
@@ -280,8 +323,10 @@ public class TweakSwitchScreen extends PackListScreen {
 				IoSupplier<InputStream> png = resources.getRootResource("pack.png");
 				if (png != null) {
 					try (InputStream stream = png.get()) {
+						byte[] bytes = stream.readAllBytes();
+						PACK_ICON_HASHES.put(id, HexFormat.of().formatHex(MessageDigest.getInstance("SHA-1").digest(bytes)));
 						Identifier location = Identifier.fromNamespaceAndPath(TweakSwitch.MOD_ID, "pack_icon/" + Integer.toHexString(id.hashCode()) + "_" + PACK_ICONS.size());
-						Minecraft.getInstance().getTextureManager().register(location, new DynamicTexture(location::toString, NativeImage.read(stream)));
+						Minecraft.getInstance().getTextureManager().register(location, new DynamicTexture(location::toString, NativeImage.read(bytes)));
 						return location;
 					}
 				}

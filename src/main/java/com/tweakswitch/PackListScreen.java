@@ -22,6 +22,7 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.StringWidget;
 import net.minecraft.client.gui.layouts.HeaderAndFooterLayout;
+import net.minecraft.client.gui.layouts.LayoutSettings;
 import net.minecraft.client.gui.layouts.LinearLayout;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -67,6 +68,8 @@ public abstract class PackListScreen extends Screen {
 	private final List<AbstractWidget> headerExtras = new ArrayList<>();
 	/** Whether the "⇧ Preview" hint fits in the header beside everything else. */
 	private boolean hintFits;
+	/** The header row's layout settings, kept so its right padding can make room for the hint. */
+	private @Nullable LayoutSettings headerSettings;
 	private final List<AbstractWidget> footerWidgets = new ArrayList<>();
 	private final List<Integer> footerWidths = new ArrayList<>();
 	private boolean refreshQueued;
@@ -103,8 +106,11 @@ public abstract class PackListScreen extends Screen {
 		this.layout.setHeaderHeight(HEADER_HEIGHT);
 		this.layout.setFooterHeight(FOOTER_HEIGHT);
 		if (this.hasSearch()) {
-			// Left-aligned, so the space kept for the "⇧ Preview" hint ends up on the right instead of split across both sides
-			LinearLayout header = this.layout.addToHeader(LinearLayout.horizontal().spacing(HEADER_GAP), settings -> settings.alignHorizontallyLeft().paddingLeft(8));
+			// Centered, with right padding reserved for the "⇧ Preview" hint (sized in repositionElements) so it's centered too
+			LinearLayout header = this.layout.addToHeader(LinearLayout.horizontal().spacing(HEADER_GAP), settings -> {
+				settings.alignHorizontallyCenter();
+				this.headerSettings = settings;
+			});
 			header.defaultCellSetting().alignVerticallyMiddle();
 			this.titleWidget = header.addChild(new StringWidget(this.styledTitle(), this.font));
 			String previousSearch = this.search != null ? this.search.getValue() : "";
@@ -168,6 +174,9 @@ public abstract class PackListScreen extends Screen {
 			int room = this.width - 8 - 8 - taken;
 			this.hintFits = hint > 0 && room - hint >= MIN_SEARCH_WIDTH;
 			this.search.setWidth(Math.max(MIN_SEARCH_WIDTH, Math.min(SEARCH_WIDTH, this.hintFits ? room - hint : room)));
+			if (this.headerSettings != null) {
+				this.headerSettings.paddingRight(this.hintFits ? hint : 0);
+			}
 		}
 		this.layout.arrangeElements();
 		if (this.list != null) {
@@ -272,7 +281,7 @@ public abstract class PackListScreen extends Screen {
 			return;
 		}
 		boolean on = previewsOn();
-		// Just right of the title/search/buttons row; room for it was kept when sizing the search box
+		// In the padding kept just right of the title/search/buttons row
 		int rowRight = this.search != null ? this.search.getRight() : 0;
 		for (AbstractWidget extra : this.headerExtras) {
 			rowRight = Math.max(rowRight, extra.getRight());
@@ -424,8 +433,16 @@ public abstract class PackListScreen extends Screen {
 	protected void addCategory(
 		final PackList list, final Set<String> toggled, final boolean openByDefault, final String name, final String count, final Runnable addRows
 	) {
+		this.addCategory(list, toggled, openByDefault, name, count, addRows, null);
+	}
+
+	/** Like {@link #addCategory(PackList, Set, boolean, String, String, Runnable)}, with a switch on the header for the whole group. */
+	protected void addCategory(
+		final PackList list, final Set<String> toggled, final boolean openByDefault, final String name, final String count, final Runnable addRows,
+		final SectionHeader.@Nullable BulkSwitch bulk
+	) {
 		boolean open = this.isSearching() || openByDefault != toggled.contains(name);
-		list.addRow(new SectionHeader(this.theme(), name, count, open, () -> {
+		list.addRow(new SectionHeader(this.theme(), name, count, open, bulk, () -> {
 			if (this.isSearching()) {
 				return;
 			}
