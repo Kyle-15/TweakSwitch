@@ -23,9 +23,10 @@ A Fabric mod for Minecraft 26.3 that turns resource packs into simple on/off swi
 ## Use
 
 - Press **K** in-game (change it in Controls → TweakSwitch), or click **TweakSwitch** in the top-left of the Resource Packs screen.
-- **Vanilla Tweaks / Modrinth:** click packs to pick them (yellow ✚), then **Download**. They show up as switches.
+- **+ Vanilla Tweaks / + Modrinth:** click packs to pick them, then **Download**. They show up as switches on their own tab.
+- **Shift:** tap it to turn hover previews on or off.
 - **Updates:** check your packs for newer versions.
-- **Open Folder:** your packs live in `.minecraft/tweakswitch/packs`. You can also drag any resource pack `.zip` onto the TweakSwitch screen.
+- **Open Folder:** your packs live in `.minecraft/tweakswitch/packs`. You can also drag any resource pack `.zip` onto the TweakSwitch screen; those go on the **Imported** tab.
 
 ## Build from source
 
