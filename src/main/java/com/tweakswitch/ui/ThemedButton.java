@@ -18,12 +18,14 @@ public class ThemedButton extends Button {
 		SECONDARY
 	}
 
+	public static final int HEIGHT = 16;
+
 	private final Theme theme;
 	private final Kind kind;
 	private BooleanSupplier highlighted = () -> false;
 
 	public ThemedButton(final Theme theme, final Kind kind, final Component message, final int width, final OnPress onPress) {
-		super(0, 0, width, 20, message, onPress, DEFAULT_NARRATION);
+		super(0, 0, width, HEIGHT, message, onPress, DEFAULT_NARRATION);
 		this.theme = theme;
 		this.kind = kind;
 	}

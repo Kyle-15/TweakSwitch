@@ -9,13 +9,20 @@ import com.tweakswitch.ModsNeededScreen;
 import com.tweakswitch.TweakSwitch;
 import com.tweakswitch.UpdatesScreen;
 import com.tweakswitch.WebClient;
+import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
+import javax.imageio.ImageIO;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import com.mojang.blaze3d.platform.InputConstants;
 import com.tweakswitch.ModrinthScreen;
+import com.tweakswitch.PackContents;
+import com.tweakswitch.Settings;
 import com.tweakswitch.PackListScreen;
 import com.tweakswitch.TweakSwitchScreen;
 import com.tweakswitch.VanillaTweaksScreen;
@@ -118,6 +125,15 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 			.sorted(Comparator.comparingInt(AbstractWidget::getY).thenComparingInt(AbstractWidget::getX))
 			.limit(2)
 			.toList());
+		// Previews start off; a Shift tap on its own turns them on
+		if (Settings.get().previews) {
+			throw new AssertionError("Previews should start off");
+		}
+		context.getInput().pressKey(InputConstants.KEY_LSHIFT);
+		context.waitTick();
+		if (!Settings.get().previews) {
+			throw new AssertionError("A Shift tap should turn previews on");
+		}
 		moveTo(context, firstTwo.get(0));
 		context.waitTicks(80);
 		context.takeScreenshot("tweakswitch-picker-preview");
@@ -203,6 +219,52 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		context.runOnClient(minecraft -> minecraft.gui.toastManager().clear());
 		context.waitTicks(2);
 		context.takeScreenshot("tweakswitch-switches-with-modrinth");
+
+		// A pack with no useful name or description: only particle textures inside
+		Path flamePack = packs.resolve("untitled-pack.zip");
+		writeParticlePack(flamePack);
+		context.setScreen(() -> new TweakSwitchScreen(null));
+		context.waitFor(minecraft -> PackContents.cached(flamePack) != null, 200);
+		if (PackContents.cached(flamePack).primary() != PackContents.Kind.PARTICLES) {
+			throw new AssertionError("untitled-pack should be recognised as a particles pack");
+		}
+		context.runOnClient(minecraft -> {
+			Settings.get().groupBy = TweakSwitchScreen.GroupBy.CHANGES.name();
+			refresh(minecraft);
+		});
+		context.waitTicks(5);
+		context.takeScreenshot("tweakswitch-switches-by-changes");
+
+		// Searching a texture's file name finds the pack that contains it
+		context.runOnClient(minecraft -> {
+			try {
+				Method method = PackListScreen.class.getDeclaredMethod("setSearchText", String.class);
+				method.setAccessible(true);
+				method.invoke(minecraft.gui.screen(), "flame");
+			} catch (ReflectiveOperationException e) {
+				throw new RuntimeException(e);
+			}
+		});
+		context.waitTicks(3);
+		Map<AbstractWidget, ?> shownRows = context.computeOnClient(minecraft -> (Map<AbstractWidget, ?>) field(TweakSwitchScreen.class, minecraft.gui.screen(), "switchRows"));
+		if (shownRows.size() != 1) {
+			throw new AssertionError("Searching \"flame\" should show just untitled-pack, showed " + shownRows.size());
+		}
+		moveTo(context, shownRows.keySet().iterator().next());
+		context.waitTicks(30);
+		context.takeScreenshot("tweakswitch-switch-preview-textures");
+		context.runOnClient(minecraft -> {
+			Settings.get().groupBy = TweakSwitchScreen.GroupBy.SOURCE.name();
+			try {
+				Method method = PackListScreen.class.getDeclaredMethod("setSearchText", String.class);
+				method.setAccessible(true);
+				method.invoke(minecraft.gui.screen(), "");
+			} catch (ReflectiveOperationException e) {
+				throw new RuntimeException(e);
+			}
+		});
+		context.getInput().setCursorPos(0, 0);
+		context.waitTicks(3);
 		// The switch shows the pack's real name, even though ":" can't go in the file name
 		boolean realName = context.computeOnClient(minecraft -> minecraft.getResourcePackRepository().getAvailablePacks().stream()
 			.anyMatch(pack -> pack.getTitle().getString().equals("Fresh Animations: Extensions")));
@@ -291,6 +353,31 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 	private static String sha1(final Path file) {
 		try {
 			return Modrinth.sha1(file);
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
+	}
+
+	/** A resource pack with an empty description and six made-up particle textures, flame.png among them. */
+	private static void writeParticlePack(final Path zip) {
+		try (ZipOutputStream out = new ZipOutputStream(Files.newOutputStream(zip))) {
+			out.putNextEntry(new ZipEntry("pack.mcmeta"));
+			out.write("{\"pack\":{\"description\":\"\",\"min_format\":84,\"max_format\":97}}".getBytes(StandardCharsets.UTF_8));
+			int[] colors = {0xFFFF7A1A, 0xFF3DD6E0, 0xFFE0303C, 0xFFF5E663, 0xFF9B5DE5, 0xFF7CE05A};
+			String[] names = {"flame", "soul_fire_flame", "heart", "glint", "spell", "happy_villager"};
+			for (int i = 0; i < names.length; i++) {
+				BufferedImage image = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
+				for (int y = 0; y < 16; y++) {
+					for (int x = 0; x < 16; x++) {
+						// A diamond of color, so the textures look like particles in the preview
+						if (Math.abs(x - 7.5) + Math.abs(y - 7.5) < 7) {
+							image.setRGB(x, y, (x + y) % 4 == 0 ? 0xFFFFFFFF : colors[i]);
+						}
+					}
+				}
+				out.putNextEntry(new ZipEntry("assets/minecraft/textures/particle/" + names[i] + ".png"));
+				ImageIO.write(image, "png", out);
+			}
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}

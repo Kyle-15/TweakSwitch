@@ -135,11 +135,11 @@ public class VanillaTweaksScreen extends DownloadScreen<VanillaTweaks.VtPack> {
 		return Theme.VANILLA_TWEAKS;
 	}
 
-	/** "Vanilla Tweaks" in white with the version in their orange, like the site's header. */
+	/** "Vanilla Tweaks" in white with the version in their orange, like the site's header; short to leave room for search. */
 	@Override
 	protected Component styledTitle() {
-		return Component.literal("Vanilla Tweaks").withStyle(style -> style.withBold(true))
-			.append(Component.literal("  Resource Packs " + VanillaTweaks.siteVersion()).withColor(Theme.VANILLA_TWEAKS.accent()));
+		return Component.literal("Vanilla Tweaks ").withStyle(style -> style.withBold(true))
+			.append(Component.literal(VanillaTweaks.siteVersion()).withColor(Theme.VANILLA_TWEAKS.accent()));
 	}
 
 	/** A tile with the pack's icon from the site and its name, like their picker. */

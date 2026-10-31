@@ -21,6 +21,9 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.tweakswitch.ui.SwitchRow;
+import com.tweakswitch.ui.ThemedButton;
+import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.network.chat.MutableComponent;
 import java.io.InputStream;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.renderer.texture.DynamicTexture;
@@ -48,8 +51,36 @@ public class TweakSwitchScreen extends PackListScreen {
 	/** Categories the player collapsed; kept for the session. */
 	private static final Set<String> COLLAPSED = new HashSet<>();
 
+	/** The ways the switches can be grouped; the "Group" button beside the search box cycles through them. */
+	public enum GroupBy {
+		/** Vanilla Tweaks category, "Modrinth", or "Other Packs". */
+		SOURCE("tweakswitch.group.source"),
+		/** What the files inside change most: Particles, GUI, Blocks… */
+		CHANGES("tweakswitch.group.changes"),
+		/** Switched on, then off. */
+		STATUS("tweakswitch.group.status"),
+		/** By first letter, for long lists. */
+		NAME("tweakswitch.group.name");
+
+		final String key;
+
+		GroupBy(final String key) {
+			this.key = key;
+		}
+
+		static GroupBy fromSettings() {
+			try {
+				return valueOf(Settings.get().groupBy);
+			} catch (IllegalArgumentException e) {
+				return SOURCE;
+			}
+		}
+	}
+
 	/** Where each downloaded pack came from, read when the list is built. */
 	private Map<String, PackIndex.Entry> index = Map.of();
+	/** Which pack each switch row shows, for the Shift preview. */
+	private final Map<AbstractWidget, Pack> switchRows = new HashMap<>();
 	/** Switch state the player has chosen but not yet applied, by pack id. */
 	private final Map<String, Boolean> pending = new HashMap<>();
 
@@ -63,6 +94,39 @@ public class TweakSwitchScreen extends PackListScreen {
 		// Runs every time the screen is shown, including coming back from the downloader: pick up new packs in the folder
 		this.repository.reload();
 		this.refreshList();
+		// Look inside every pack in the background, for grouping by what it changes, searching its files and previews
+		List<Path> files = this.ourPacks().stream().map(TweakSwitchScreen::path).toList();
+		PackContents.analyzeAll(files, () -> {
+			if (this.minecraft.gui.screen() == this) {
+				this.refreshList();
+			}
+		});
+	}
+
+	private List<Pack> ourPacks() {
+		return this.repository.getAvailablePacks().stream().filter(TweakSwitchPackSource::isOurs).toList();
+	}
+
+	private static Path path(final Pack pack) {
+		return TweakSwitch.packsDir().resolve(TweakSwitchPackSource.fileName(pack));
+	}
+
+	/** "Group: Source" beside the search box; each click moves to the next way of grouping. */
+	@Override
+	protected List<AbstractWidget> createHeaderExtras() {
+		ThemedButton group = new ThemedButton(this.theme(), ThemedButton.Kind.SECONDARY, Component.empty(), 104, button -> {
+			GroupBy[] all = GroupBy.values();
+			Settings settings = Settings.get();
+			settings.groupBy = all[(GroupBy.fromSettings().ordinal() + 1) % all.length].name();
+			settings.save();
+			this.refreshList();
+		}) {
+			@Override
+			public Component getMessage() {
+				return Component.translatable("tweakswitch.group", Component.translatable(GroupBy.fromSettings().key));
+			}
+		};
+		return List.of(group);
 	}
 
 	@Override
@@ -82,33 +146,97 @@ public class TweakSwitchScreen extends PackListScreen {
 
 	@Override
 	protected void fillList(final PackList list) {
-		List<Pack> ours = this.repository.getAvailablePacks().stream()
-			.filter(TweakSwitchPackSource::isOurs)
+		this.switchRows.clear();
+		List<Pack> ours = this.ourPacks().stream()
 			.sorted(Comparator.comparing(pack -> pack.getTitle().getString().toLowerCase(Locale.ROOT)))
 			.toList();
-		List<Pack> shown = ours.stream().filter(pack -> this.matches(pack.getTitle().getString(), pack.getDescription().getString())).toList();
+		// Search also looks at the file name and what's inside, so "flame" finds a pack that changes the flame particle
+		List<Pack> shown = ours.stream().filter(pack -> {
+			PackContents.Info contents = PackContents.cached(path(pack));
+			return this.matches(pack.getTitle().getString(), pack.getDescription().getString(), TweakSwitchPackSource.fileName(pack),
+				contents != null ? contents.searchText() : "");
+		}).toList();
 
 		if (shown.isEmpty()) {
 			list.addText(Component.translatable(ours.isEmpty() ? "tweakswitch.empty" : "tweakswitch.noMatches").withStyle(ChatFormatting.GRAY));
 			return;
 		}
 
-		// Vanilla Tweaks downloads remember their category; anything else goes under "Other Packs", listed last
 		this.index = PackIndex.load();
-		Map<String, PackIndex.Entry> index = this.index;
-		String other = Component.translatable("tweakswitch.otherPacks").getString();
-		Map<String, List<Pack>> byCategory = new TreeMap<>(Comparator.comparing((String name) -> name.equals(other)).thenComparing(Comparator.naturalOrder()));
+		Collection<String> selected = this.repository.getSelectedIds();
+		GroupBy groupBy = GroupBy.fromSettings();
+		String last = groupBy == GroupBy.SOURCE ? Component.translatable("tweakswitch.otherPacks").getString() : Component.translatable("tweakswitch.group.unknown").getString();
+		// Sorted by name, with the catch-all group ("Other Packs", "Not looked at yet") last
+		Map<String, List<Pack>> groups = new TreeMap<>(Comparator.comparing((String name) -> name.equals(last)).thenComparing(Comparator.naturalOrder()));
 		for (Pack pack : shown) {
-			PackIndex.Entry entry = index.get(TweakSwitchPackSource.fileName(pack));
-			String category = entry != null ? entry.category() : other;
-			byCategory.computeIfAbsent(category, name -> new ArrayList<>()).add(pack);
+			groups.computeIfAbsent(this.groupOf(pack, groupBy, selected, last), name -> new ArrayList<>()).add(pack);
 		}
 
-		Collection<String> selected = this.repository.getSelectedIds();
-		byCategory.forEach((category, packs) -> {
-			long on = packs.stream().filter(pack -> this.pending.getOrDefault(pack.getId(), selected.contains(pack.getId()))).count();
-			this.addCategory(list, COLLAPSED, true, category, on + "/" + packs.size() + " on", () -> packs.forEach(pack -> list.addRow(this.createSwitch(pack), SwitchRow.HEIGHT)));
+		groups.forEach((group, packs) -> {
+			long on = packs.stream().filter(pack -> this.isOn(pack, selected)).count();
+			String count = groupBy == GroupBy.STATUS ? Integer.toString(packs.size()) : on + "/" + packs.size() + " on";
+			this.addCategory(list, COLLAPSED, true, group, count, () -> packs.forEach(pack -> {
+				SwitchRow row = this.createSwitch(pack);
+				this.switchRows.put(row, pack);
+				list.addRow(row, SwitchRow.HEIGHT);
+			}));
 		});
+	}
+
+	private boolean isOn(final Pack pack, final Collection<String> selected) {
+		return this.pending.getOrDefault(pack.getId(), selected.contains(pack.getId()));
+	}
+
+	private String groupOf(final Pack pack, final GroupBy groupBy, final Collection<String> selected, final String fallback) {
+		return switch (groupBy) {
+			case SOURCE -> {
+				PackIndex.Entry entry = this.index.get(TweakSwitchPackSource.fileName(pack));
+				yield entry != null ? entry.category() : fallback;
+			}
+			case CHANGES -> {
+				PackContents.Info contents = PackContents.cached(path(pack));
+				yield contents != null ? contents.primary().label : fallback;
+			}
+			case STATUS -> Component.translatable(this.isOn(pack, selected) ? "tweakswitch.group.on" : "tweakswitch.group.off").getString();
+			case NAME -> {
+				String title = pack.getTitle().getString().strip();
+				char first = title.isEmpty() ? '#' : Character.toUpperCase(title.charAt(0));
+				yield Character.isLetter(first) ? String.valueOf(first) : "#";
+			}
+		};
+	}
+
+	/**
+	 * With Shift previews on: pictures from the pack's website if it came from Vanilla Tweaks or Modrinth, otherwise the
+	 * textures inside it, so even a pack with no proper name or description shows what it does.
+	 */
+	@Override
+	protected @Nullable Preview previewFor(final AbstractWidget hovered) {
+		Pack pack = this.switchRows.get(hovered);
+		if (pack == null) {
+			return null;
+		}
+		Path file = path(pack);
+		PackContents.Info contents = PackContents.cached(file);
+		MutableComponent details = Component.empty();
+		if (!pack.getDescription().getString().isBlank()) {
+			details.append(pack.getDescription().copy().withStyle(ChatFormatting.WHITE)).append("\n");
+		}
+		if (contents != null) {
+			details.append(contents.summary().copy().withColor(this.theme().accent())).append("\n");
+		}
+		details.append(Component.literal(TweakSwitchPackSource.fileName(pack)).withStyle(ChatFormatting.DARK_GRAY));
+
+		List<String> websitePictures = List.of();
+		PackIndex.Entry entry = this.index.get(TweakSwitchPackSource.fileName(pack));
+		if (entry != null && entry.id() != null && PackIndex.VANILLA_TWEAKS.equals(entry.source())) {
+			// The pack list isn't loaded here, so try both of the site's preview formats; the one that fails is skipped
+			websitePictures = List.of(VanillaTweaks.previewUrl(entry.id(), "gif"), VanillaTweaks.previewUrl(entry.id(), "png"));
+		} else if (entry != null && entry.id() != null && PackIndex.MODRINTH.equals(entry.source())) {
+			websitePictures = Modrinth.images(new Modrinth.Project(entry.id(), "", pack.getTitle().getString(), "", "", 0, List.of(), null, List.of()));
+		}
+		List<Identifier> textures = websitePictures.isEmpty() ? PackContents.textures(file) : List.of();
+		return new Preview(pack.getId(), pack.getTitle(), details, websitePictures, textures);
 	}
 
 	private SwitchRow createSwitch(final Pack pack) {
@@ -117,7 +245,9 @@ public class TweakSwitchScreen extends PackListScreen {
 		Component description = compatible
 			? pack.getDescription()
 			: Component.empty().append(pack.getDescription()).append("\n").append(Component.translatable("tweakswitch.incompatible").withStyle(ChatFormatting.RED));
-		return new SwitchRow(this.theme(), this.iconFor(pack), pack.getTitle(), description, !compatible,
+		PackContents.Info contents = PackContents.cached(path(pack));
+		String tag = contents != null ? contents.primary().label : "";
+		return new SwitchRow(this.theme(), this.iconFor(pack), pack.getTitle(), description, tag, !compatible,
 			() -> this.pending.getOrDefault(id, this.repository.getSelectedIds().contains(id)),
 			() -> {
 				this.pending.put(id, !this.pending.getOrDefault(id, this.repository.getSelectedIds().contains(id)));

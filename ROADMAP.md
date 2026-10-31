@@ -4,24 +4,9 @@ Ideas for future versions, roughly in the order they'd help most. Tick them off 
 
 ## Next up
 
-- [ ] **Sharper previews.** Hover previews look pixelated because:
-  - pictures are shrunk in whole steps (a 957 px preview drops to 319 px, animations to 240 px) and then stretched back up to ~300+ screen pixels;
-  - the textures use Minecraft's "nearest pixel" scaling, so stretching makes them blocky;
-  - Modrinth search only gives 350 px thumbnails.
-
-  Fix: decode each picture to the size it's actually shown at (panel width × GUI scale) with smooth resizing, use smooth texture filtering, and fetch Modrinth's full-size gallery images. Maybe also a bigger preview while holding Shift.
-- [ ] **Smaller UI.** Everything feels a bit too big. Current sizes (in GUI pixels) and targets:
-
-  | Part | Now | Target |
-  |---|---|---|
-  | Bottom-bar buttons | 20 tall | 16 |
-  | Switch cards (home) | 30 tall, 22 px icon | 22, 16 px icon, description in tooltip only |
-  | Modrinth cards | 46 tall, 34 px icon | 34, 24 px icon, tags on the same line as downloads |
-  | Vanilla Tweaks tiles | 66 × 62, 28 px icon | 52 × 48, 20 px icon, one-line names |
-  | Plain list rows | 25 tall | 20 |
-  | Header (title + search) | 40 tall | 32, title and search side by side |
-
-  Also a **UI size** option (Compact / Normal) so either look stays available.
+- [x] **Sharper previews.** Pictures are decoded at the size they're shown on screen, resized smoothly, drawn with smooth scaling, and Modrinth uses full-size gallery pictures. (1.2.0)
+- [x] **Smaller UI.** One-row header (title, search, buttons), 16 px buttons, 22 px switch cards, two-line Modrinth cards, smaller Vanilla Tweaks tiles. (1.2.0)
+- [ ] **UI size option** (Compact / Normal) so the bigger look stays available.
 - [ ] **Pack order.** Choose which pack wins when two change the same thing, with up/down arrows or drag-to-reorder on the switch cards.
 - [ ] **Conflict warnings.** Warn when switching on two Vanilla Tweaks packs that clash (e.g. two crosshairs) and offer to turn the other one off.
 - [ ] **Vanilla Tweaks credit.** Keep "Vanilla Tweaks · vanillatweaks.net" in downloaded packs' descriptions (the mod currently replaces it), and ask Vanilla Tweaks for permission for the downloader.
@@ -61,6 +46,11 @@ Ideas for future versions, roughly in the order they'd help most. Tick them off 
 - [ ] **Translations** into other languages.
 
 ## Done
+
+- [x] **Shift previews** on the TweakSwitch, Vanilla Tweaks and Modrinth screens: tap Shift to turn the preview panel on or off (1.2.0)
+- [x] **See what any pack does:** previews show the textures inside a pack, plus "Changes: Particles (12)…" (1.2.0)
+- [x] **Group switches** by source, by what they change, by on/off, or A–Z (1.2.0)
+- [x] **Search inside packs:** file names count, so "flame" finds a pack that changes the flame particle (1.2.0)
 
 - [x] On/off switches, categories, Mod Menu (1.0)
 - [x] Vanilla Tweaks and Modrinth downloaders, previews, mod warnings, updates (1.0)

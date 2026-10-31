@@ -168,6 +168,11 @@ public class UpdatesScreen extends DownloadScreen<UpdatesScreen.Item> {
 	}
 
 	@Override
+	protected boolean hasPreviews() {
+		return false;
+	}
+
+	@Override
 	protected String downloadLabelKey() {
 		return "tweakswitch.updates.update";
 	}

@@ -21,6 +21,9 @@ import javax.imageio.ImageReader;
 import javax.imageio.metadata.IIOMetadata;
 import javax.imageio.stream.ImageInputStream;
 import net.minecraft.client.Minecraft;
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.renderpearl.api.textures.FilterMode;
+import java.util.function.Supplier;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.resources.Identifier;
 import org.jspecify.annotations.Nullable;
@@ -33,12 +36,16 @@ import org.w3c.dom.Node;
  */
 public final class RemoteImages {
 	private static final Logger LOGGER = LogUtils.getLogger();
-	/** Bigger images are shrunk; the hover panel is only ~150 GUI pixels wide. */
-	private static final int MAX_WIDTH = 320;
-	private static final int MAX_ANIMATED_WIDTH = 240;
+	/** Previews are decoded at the size the panel shows them on screen (its GUI width times the GUI scale), within these limits. */
+	private static final int MIN_PREVIEW_WIDTH = 240;
+	private static final int MAX_PREVIEW_WIDTH = 960;
+	/** Animations stay a little smaller, since every frame is its own texture. */
+	private static final int MAX_ANIMATED_WIDTH = 520;
 	private static final int MAX_FRAMES = 150;
-	/** Frames kept across all images before old images are released. */
-	private static final int FRAME_BUDGET = 1500;
+	/** Pixels one animation may hold across all its frames (about 24 MB); longer ones keep every n-th frame. */
+	private static final long ANIMATION_PIXEL_BUDGET = 6_000_000L;
+	/** Pixels kept across all images before the least recently shown are released (about 100 MB). */
+	private static final long PIXEL_BUDGET = 25_000_000L;
 	/** Browsers play GIF frames marked faster than this at 100 ms, so we do too. */
 	private static final int MIN_FRAME_DELAY_MS = 20;
 	private static final int DEFAULT_FRAME_DELAY_MS = 100;
@@ -65,10 +72,22 @@ public final class RemoteImages {
 	public record Frame(Identifier texture, int delayMs) {
 	}
 
+	/** Previews are photos and screenshots, so they're scaled smoothly instead of Minecraft's blocky "nearest pixel". */
+	private static final class SmoothTexture extends DynamicTexture {
+		SmoothTexture(final Supplier<String> label, final NativeImage image) {
+			super(label, image);
+			this.sampler = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR);
+		}
+	}
+
 	/** A loaded image: one frame for stills, several for animations. */
 	public record Image(List<Frame> frames, int width, int height, int durationMs) {
 		static final Image LOADING = new Image(List.of(), 0, 0, 0);
 		static final Image FAILED = new Image(List.of(), -1, -1, 0);
+
+		long pixels() {
+			return (long) Math.max(0, this.width) * Math.max(0, this.height) * this.frames.size();
+		}
 
 		public boolean loaded() {
 			return !this.frames.isEmpty();
@@ -120,7 +139,7 @@ public final class RemoteImages {
 			}
 			try {
 				List<RawFrame> frames = decode(WebClient.getBytes(URI.create(url)));
-				Minecraft.getInstance().execute(() -> store(url, frames));
+				Minecraft.getInstance().execute(() -> store(url, frames, true));
 			} catch (Throwable e) {
 				LOGGER.debug("Couldn't load image {}", url, e);
 				Minecraft.getInstance().execute(() -> IMAGES.put(url, Image.FAILED));
@@ -140,7 +159,7 @@ public final class RemoteImages {
 			try {
 				byte[] bytes = WebClient.getBytes(URI.create(url));
 				List<RawFrame> frames = List.of(decodeStill(bytes, MAX_ICON_WIDTH));
-				Minecraft.getInstance().execute(() -> store(url, frames));
+				Minecraft.getInstance().execute(() -> store(url, frames, false));
 			} catch (Throwable e) {
 				LOGGER.debug("Couldn't load icon {}", url, e);
 				Minecraft.getInstance().execute(() -> IMAGES.put(url, Image.FAILED));
@@ -149,12 +168,14 @@ public final class RemoteImages {
 		return Image.LOADING;
 	}
 
-	private static void store(final String url, final List<RawFrame> raw) {
+	/** @param smooth previews scale smoothly; pixel-art icons stay crisp */
+	private static void store(final String url, final List<RawFrame> raw, final boolean smooth) {
 		List<Frame> frames = new ArrayList<>();
 		int duration = 0;
 		for (RawFrame frame : raw) {
 			Identifier id = Identifier.fromNamespaceAndPath(TweakSwitch.MOD_ID, "remote_image/" + NEXT_ID.incrementAndGet());
-			Minecraft.getInstance().getTextureManager().register(id, new DynamicTexture(id::toString, frame.image()));
+			Minecraft.getInstance().getTextureManager().register(id,
+				smooth ? new SmoothTexture(id::toString, frame.image()) : new DynamicTexture(id::toString, frame.image()));
 			frames.add(new Frame(id, frame.delayMs()));
 			duration += frame.delayMs();
 		}
@@ -163,21 +184,27 @@ public final class RemoteImages {
 		evict(url);
 	}
 
-	/** Releases the least recently shown images until the frame budget fits, never the one just added. */
+	/** Releases the least recently shown images until the pixel budget fits, never the one just added. */
 	private static void evict(final String keep) {
 		synchronized (IMAGES) {
-			int total = IMAGES.values().stream().mapToInt(image -> image.frames().size()).sum();
+			long total = IMAGES.values().stream().mapToLong(Image::pixels).sum();
 			Iterator<Map.Entry<String, Image>> iterator = IMAGES.entrySet().iterator();
-			while (total > FRAME_BUDGET && iterator.hasNext()) {
+			while (total > PIXEL_BUDGET && iterator.hasNext()) {
 				Map.Entry<String, Image> entry = iterator.next();
 				if (entry.getKey().equals(keep) || !entry.getValue().loaded()) {
 					continue;
 				}
 				entry.getValue().frames().forEach(frame -> Minecraft.getInstance().getTextureManager().release(frame.texture()));
-				total -= entry.getValue().frames().size();
+				total -= entry.getValue().pixels();
 				iterator.remove();
 			}
 		}
+	}
+
+	/** The preview panel's width in real screen pixels: its GUI width times the GUI scale. */
+	private static int previewWidth() {
+		int scaled = PackListScreen.PREVIEW_WIDTH * Math.max(1, Minecraft.getInstance().getWindow().getGuiScale());
+		return Math.max(MIN_PREVIEW_WIDTH, Math.min(MAX_PREVIEW_WIDTH, scaled));
 	}
 
 	/** PNG, JPEG and GIF through ImageIO (every GIF frame); WebP through the bundled TwelveMonkeys reader. */
@@ -185,7 +212,7 @@ public final class RemoteImages {
 		if (bytes.length > 6 && bytes[0] == 'G' && bytes[1] == 'I' && bytes[2] == 'F') {
 			return decodeGif(bytes);
 		}
-		return List.of(decodeStill(bytes, MAX_WIDTH));
+		return List.of(decodeStill(bytes, previewWidth()));
 	}
 
 	/** The first frame of any supported image, shrunk to at most {@code maxWidth} wide. */
@@ -209,7 +236,7 @@ public final class RemoteImages {
 		}
 		int width = image.getWidth();
 		int height = image.getHeight();
-		return new RawFrame(shrink(image.getRGB(0, 0, width, height, null, 0, width), width, height, maxWidth), 0);
+		return new RawFrame(resize(image.getRGB(0, 0, width, height, null, 0, width), width, height, maxWidth), 0);
 	}
 
 	/**
@@ -221,7 +248,6 @@ public final class RemoteImages {
 		try (ImageInputStream input = ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
 			reader.setInput(input, false);
 			int count = reader.getNumImages(true);
-			int step = Math.max(1, (count + MAX_FRAMES - 1) / MAX_FRAMES);
 
 			IIOMetadata streamMetadata = reader.getStreamMetadata();
 			Node screen = streamMetadata != null ? child(streamMetadata.getAsTree("javax_imageio_gif_stream_1.0"), "LogicalScreenDescriptor") : null;
@@ -233,6 +259,10 @@ public final class RemoteImages {
 				height = firstImage.getHeight();
 			}
 
+			int maxWidth = Math.min(previewWidth(), MAX_ANIMATED_WIDTH);
+			long framePixels = (long) Math.min(width, maxWidth) * Math.max(1, height * Math.min(width, maxWidth) / Math.max(1, width));
+			int maxFrames = (int) Math.max(1, Math.min(MAX_FRAMES, ANIMATION_PIXEL_BUDGET / Math.max(1, framePixels)));
+			int step = Math.max(1, (count + maxFrames - 1) / maxFrames);
 			int[] canvas = new int[width * height];
 			List<RawFrame> frames = new ArrayList<>();
 			int pendingDelay = 0;
@@ -267,7 +297,7 @@ public final class RemoteImages {
 
 				pendingDelay += delay;
 				if (i % step == 0 || i == count - 1) {
-					frames.add(new RawFrame(shrink(canvas, width, height, MAX_ANIMATED_WIDTH), pendingDelay));
+					frames.add(new RawFrame(resize(canvas, width, height, maxWidth), pendingDelay));
 					pendingDelay = 0;
 				}
 
@@ -309,26 +339,51 @@ public final class RemoteImages {
 		}
 	}
 
-	/** Box-filter downscale straight into a texture image, done by hand to stay clear of AWT graphics on macOS. */
-	private static NativeImage shrink(final int[] source, final int width, final int height, final int maxWidth) {
-		int factor = Math.max(1, (width + maxWidth - 1) / maxWidth);
-		int outWidth = Math.max(1, width / factor);
-		int outHeight = Math.max(1, height / factor);
+	/**
+	 * Shrinks to at most {@code maxWidth} wide by averaging exactly the source area each output pixel covers (so a 957 px
+	 * picture becomes a sharp 640 px one, not a blocky 319 px one), straight into a texture image. Never enlarges: smooth
+	 * texture scaling handles that. Done by hand to stay clear of AWT graphics on macOS.
+	 */
+	private static NativeImage resize(final int[] source, final int width, final int height, final int maxWidth) {
+		int outWidth = Math.min(width, maxWidth);
+		int outHeight = Math.max(1, (int) Math.round((double) height * outWidth / width));
 		NativeImage out = new NativeImage(outWidth, outHeight, false);
-		int samples = factor * factor;
+		if (outWidth == width) {
+			for (int y = 0; y < height; y++) {
+				for (int x = 0; x < width; x++) {
+					out.setPixel(x, y, source[y * width + x]);
+				}
+			}
+			return out;
+		}
+		double scaleX = (double) width / outWidth;
+		double scaleY = (double) height / outHeight;
 		for (int y = 0; y < outHeight; y++) {
+			double top = y * scaleY;
+			double bottom = top + scaleY;
 			for (int x = 0; x < outWidth; x++) {
-				long a = 0, r = 0, g = 0, b = 0;
-				for (int dy = 0; dy < factor; dy++) {
-					for (int dx = 0; dx < factor; dx++) {
-						int argb = source[(y * factor + dy) * width + x * factor + dx];
-						a += argb >>> 24;
-						r += argb >> 16 & 0xFF;
-						g += argb >> 8 & 0xFF;
-						b += argb & 0xFF;
+				double left = x * scaleX;
+				double right = left + scaleX;
+				double a = 0, r = 0, g = 0, b = 0, total = 0;
+				for (int sy = (int) top; sy < Math.min(height, Math.ceil(bottom)); sy++) {
+					double wy = Math.min(bottom, sy + 1) - Math.max(top, sy);
+					for (int sx = (int) left; sx < Math.min(width, Math.ceil(right)); sx++) {
+						double weight = wy * (Math.min(right, sx + 1) - Math.max(left, sx));
+						int argb = source[sy * width + sx];
+						double alpha = (argb >>> 24) * weight;
+						// Weight colors by alpha so transparent pixels don't darken edges
+						a += alpha;
+						r += (argb >> 16 & 0xFF) * alpha;
+						g += (argb >> 8 & 0xFF) * alpha;
+						b += (argb & 0xFF) * alpha;
+						total += weight;
 					}
 				}
-				out.setPixel(x, y, (int) (a / samples) << 24 | (int) (r / samples) << 16 | (int) (g / samples) << 8 | (int) (b / samples));
+				int outA = (int) Math.round(a / total);
+				int outR = a > 0 ? (int) Math.round(r / a) : 0;
+				int outG = a > 0 ? (int) Math.round(g / a) : 0;
+				int outB = a > 0 ? (int) Math.round(b / a) : 0;
+				out.setPixel(x, y, outA << 24 | outR << 16 | outG << 8 | outB);
 			}
 		}
 		return out;

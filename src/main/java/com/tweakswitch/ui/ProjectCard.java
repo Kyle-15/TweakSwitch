@@ -11,8 +11,8 @@ import org.jspecify.annotations.Nullable;
 
 /** A Modrinth project as a card, like on modrinth.com: icon, title and author, summary, download count and tags. */
 public class ProjectCard extends CardButton {
-	public static final int HEIGHT = 46;
-	private static final int ICON_SIZE = 34;
+	public static final int HEIGHT = 32;
+	private static final int ICON_SIZE = 24;
 
 	private final String title;
 	private final String author;
@@ -41,70 +41,69 @@ public class ProjectCard extends CardButton {
 		this.active = !downloaded;
 	}
 
+	/** Two lines: "Title by author" with the download count (or a badge) on the right, then the summary with tags. */
 	@Override
 	protected void draw(final GuiGraphicsExtractor graphics, final Font font, final boolean hovered) {
 		int x = this.getX();
 		int y = this.getY();
 		int width = this.getWidth();
 		boolean isPicked = this.picked.getAsBoolean();
-		Draw.roundRectOutlined(graphics, x, y, width, this.getHeight() - 2, 6,
+		Draw.roundRectOutlined(graphics, x, y, width, this.getHeight() - 2, 5,
 			isPicked ? this.theme.cardSelected() : hovered ? this.theme.cardHover() : this.theme.card(),
 			isPicked ? this.theme.accent() : hovered ? this.theme.border() : this.theme.card());
 
-		int iconX = x + 6;
-		int iconY = y + 5;
-		Draw.roundRect(graphics, iconX, iconY, ICON_SIZE, ICON_SIZE, 5, this.theme.off());
+		int iconX = x + 4;
+		int iconY = y + 3;
+		Draw.roundRect(graphics, iconX, iconY, ICON_SIZE, ICON_SIZE, 4, this.theme.off());
 		Identifier texture = this.icon.get();
 		if (texture != null) {
 			graphics.blit(texture, iconX, iconY, iconX + ICON_SIZE, iconY + ICON_SIZE, 0.0F, 1.0F, 0.0F, 1.0F);
 		}
 
-		// Right side: state badge on top, download count below
+		int textX = iconX + ICON_SIZE + 6;
+		int lineOne = y + 4;
+		int lineTwo = y + 16;
+
+		// Right of line one: a state badge, or else the download count
 		String badge = this.downloaded ? "✔ Installed" : isPicked ? "✚ Picked" : null;
-		int badgeWidth = badge != null ? font.width(badge) + 8 : 0;
+		int rightOne;
 		if (badge != null) {
-			int badgeX = x + width - badgeWidth - 6;
-			Draw.roundRect(graphics, badgeX, y + 4, badgeWidth, 12, 6, this.downloaded ? this.theme.off() : this.theme.accent());
-			graphics.text(font, badge, badgeX + 4, y + 6, this.downloaded ? this.theme.muted() : this.theme.onAccent(), false);
+			int badgeWidth = font.width(badge) + 8;
+			rightOne = x + width - badgeWidth - 5;
+			Draw.roundRect(graphics, rightOne, lineOne - 2, badgeWidth, 11, 5, this.downloaded ? this.theme.off() : this.theme.accent());
+			graphics.text(font, badge, rightOne + 4, lineOne, this.downloaded ? this.theme.muted() : this.theme.onAccent(), false);
+		} else {
+			String count = "⬇ " + this.downloads;
+			rightOne = x + width - font.width(count) - 6;
+			graphics.text(font, count, rightOne, lineOne, this.theme.muted(), false);
 		}
-		String count = "⬇ " + this.downloads;
-		int countWidth = font.width(count);
-		graphics.text(font, count, x + width - countWidth - 7, y + 30, this.theme.muted(), false);
-
-		int textX = iconX + ICON_SIZE + 7;
-		int textRight = x + width - Math.max(badgeWidth, countWidth) - 12;
 		String by = " by " + this.author;
-		String shownTitle = Draw.fit(font, this.title, textRight - textX);
-		graphics.text(font, shownTitle, textX, y + 5, this.theme.text(), false);
+		String shownTitle = Draw.fit(font, this.title, rightOne - 6 - textX);
+		graphics.text(font, shownTitle, textX, lineOne, this.theme.text(), false);
 		int byX = textX + font.width(shownTitle);
-		if (byX + font.width(by) <= textRight) {
-			graphics.text(font, by, byX, y + 5, this.theme.muted(), false);
+		if (byX + font.width(by) <= rightOne - 6) {
+			graphics.text(font, by, byX, lineOne, this.theme.muted(), false);
 		}
-		graphics.text(font, Draw.fit(font, this.summary, textRight - textX), textX, y + 17, this.theme.muted(), false);
 
-		// Tag pills, as many as fit; a gold one first if the pack needs mods
-		int pillX = textX;
-		int pillY = y + 29;
+		// Line two: tags from the right edge (a gold "Needs mods" first), the summary in what's left
+		int pillRight = x + width - 5;
+		List<String> pills = new java.util.ArrayList<>();
 		if (this.needsMods) {
-			pillX = this.pill(graphics, font, "⚠ Needs mods", pillX, pillY, textRight, 0xFF5A4A1A, 0xFFFFC857);
+			pills.add("⚠ Needs mods");
 		}
-		for (String tag : this.tags) {
-			int next = this.pill(graphics, font, tag, pillX, pillY, textRight, this.theme.off(), this.theme.muted());
-			if (next == pillX) {
+		pills.addAll(this.tags.stream().limit(2).toList());
+		for (String pill : pills) {
+			int pillWidth = font.width(pill) + 8;
+			if (pillRight - pillWidth < textX + 60) {
 				break;
 			}
-			pillX = next;
+			pillRight -= pillWidth;
+			boolean warning = pill.startsWith("⚠");
+			Draw.roundRect(graphics, pillRight, lineTwo - 2, pillWidth, 11, 5, warning ? 0xFF5A4A1A : this.theme.off());
+			graphics.text(font, pill, pillRight + 4, lineTwo, warning ? 0xFFFFC857 : this.theme.muted(), false);
+			pillRight -= 3;
 		}
+		graphics.text(font, Draw.fit(font, this.summary, pillRight - 4 - textX), textX, lineTwo, this.theme.muted(), false);
 	}
 
-	/** Draws a small rounded tag if it fits before {@code right}; returns where the next one goes. */
-	private int pill(final GuiGraphicsExtractor graphics, final Font font, final String text, final int x, final int y, final int right, final int fill, final int color) {
-		int width = font.width(text) + 8;
-		if (x + width > right) {
-			return x;
-		}
-		Draw.roundRect(graphics, x, y, width, 11, 5, fill);
-		graphics.text(font, text, x + 4, y + 2, color, false);
-		return x + width + 3;
-	}
 }

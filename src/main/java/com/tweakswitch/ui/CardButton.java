@@ -1,5 +1,6 @@
 package com.tweakswitch.ui;
 
+import com.tweakswitch.PackListScreen;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -27,6 +28,14 @@ public abstract class CardButton extends AbstractButton {
 	@Override
 	protected void updateWidgetNarration(final NarrationElementOutput output) {
 		this.defaultButtonNarrationText(output);
+	}
+
+	/** The Shift preview panel shows more than a tooltip would, so plain tooltips stay hidden while it's on. */
+	@Override
+	protected void extractTooltipForNextRenderPass(final GuiGraphicsExtractor graphics, final int mouseX, final int mouseY) {
+		if (!PackListScreen.previewsOn()) {
+			super.extractTooltipForNextRenderPass(graphics, mouseX, mouseY);
+		}
 	}
 
 	@Override

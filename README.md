@@ -2,10 +2,11 @@
 
 A Fabric mod for Minecraft 26.3 that turns resource packs into simple on/off switches, and downloads packs for you from Vanilla Tweaks and Modrinth.
 
-- **Switches:** every pack gets an ON/OFF button, grouped by category. Changes apply with one reload when you click Done.
+- **Switches:** every pack gets an ON/OFF switch. Group them by source, by what they change (Particles, GUI, Blocks…), by on/off, or A–Z. Changes apply with one reload when you click Done.
+- **Search inside packs:** search matches names, descriptions and the files inside each pack, so "flame" finds a pack that changes the flame particle.
 - **Vanilla Tweaks:** browse all their resource packs in-game and download each one as its own switch, instead of one combined zip.
 - **Modrinth:** search Modrinth's resource packs for your Minecraft version, sorted by downloads, newest and more.
-- **Previews:** hover a pack to see its pictures. Animated previews play, and Modrinth galleries step through every picture.
+- **Previews:** tap **Shift** to turn previews on, then hover a pack. Website packs show their pictures (animations play, Modrinth galleries step through), and any other pack shows the textures inside it, so you can tell what it does even without a proper name.
 - **Mod warnings:** packs that need mods show a warning, with a link to each mod's download page before anything downloads.
 - **Updates:** check every pack you have for newer versions and update them in one click.
 

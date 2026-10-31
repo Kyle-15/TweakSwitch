@@ -113,6 +113,8 @@ public final class Modrinth {
 	}
 
 	private static final Map<String, Requirements> REQUIREMENTS = new ConcurrentHashMap<>();
+	private static final Map<String, List<String>> FULL_IMAGES = new ConcurrentHashMap<>();
+	private static final Set<String> LOADING_IMAGES = ConcurrentHashMap.newKeySet();
 	private static final Set<String> LOADING_REQUIREMENTS = ConcurrentHashMap.newKeySet();
 	private static final ExecutorService LOADER = Executors.newSingleThreadExecutor(runnable -> {
 		Thread thread = new Thread(runnable, "TweakSwitch Modrinth lookups");
@@ -170,6 +172,40 @@ public final class Modrinth {
 			));
 		}
 		return new Page(projects, result.get("total_hits").getAsInt());
+	}
+
+	/**
+	 * The project's gallery at full size, featured picture first. Search results only carry 350 px thumbnails, so the first
+	 * call returns those and fetches the full-size list in the background for next time.
+	 */
+	public static List<String> images(final Project project) {
+		List<String> full = FULL_IMAGES.get(project.id());
+		if (full != null) {
+			return full.isEmpty() ? project.images() : full;
+		}
+		if (LOADING_IMAGES.add(project.id())) {
+			LOADER.execute(() -> {
+				try {
+					JsonObject json = JsonParser.parseString(WebClient.getString(URI.create(API + "/project/" + project.id()))).getAsJsonObject();
+					List<String> featured = new ArrayList<>();
+					List<String> rest = new ArrayList<>();
+					for (JsonElement element : json.getAsJsonArray("gallery")) {
+						JsonObject picture = element.getAsJsonObject();
+						String url = string(picture, "raw_url") != null ? string(picture, "raw_url") : string(picture, "url");
+						if (url != null) {
+							(picture.get("featured").getAsBoolean() ? featured : rest).add(url);
+						}
+					}
+					featured.addAll(rest);
+					FULL_IMAGES.put(project.id(), List.copyOf(featured));
+				} catch (Exception e) {
+					FULL_IMAGES.put(project.id(), List.of());
+				} finally {
+					LOADING_IMAGES.remove(project.id());
+				}
+			});
+		}
+		return project.images();
 	}
 
 	/** Requirements if already looked up this session, without starting a lookup. */

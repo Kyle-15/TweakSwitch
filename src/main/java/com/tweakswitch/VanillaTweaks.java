@@ -119,8 +119,11 @@ public final class VanillaTweaks {
 
 	/** The picture the website shows when you hover a pack. */
 	public static String previewUrl(final VtPack pack) {
-		String extension = pack.previewExtension() != null ? pack.previewExtension() : "png";
-		return BASE + "/assets/resources/previews/resourcepacks/" + siteVersion() + "/" + URLEncoder.encode(pack.id(), StandardCharsets.UTF_8) + "." + extension;
+		return previewUrl(pack.id(), pack.previewExtension() != null ? pack.previewExtension() : "png");
+	}
+
+	public static String previewUrl(final String packId, final String extension) {
+		return BASE + "/assets/resources/previews/resourcepacks/" + siteVersion() + "/" + URLEncoder.encode(packId, StandardCharsets.UTF_8) + "." + extension;
 	}
 
 	/** Downloads one pack into {@code targetDir} and returns the saved file. */

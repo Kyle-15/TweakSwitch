@@ -6,12 +6,14 @@ import net.minecraft.network.chat.Component;
 
 /** A category heading: "▼ Name" on the left, a count on the right, an accent stripe, and a click to fold it. */
 public class SectionHeader extends CardButton {
+	public static final int HEIGHT = 14;
+
 	private final String name;
 	private final String count;
 	private final boolean open;
 
 	public SectionHeader(final Theme theme, final String name, final String count, final boolean open, final Runnable toggle) {
-		super(theme, 18, Component.literal(name), toggle);
+		super(theme, HEIGHT, Component.literal(name), toggle);
 		this.name = name;
 		this.count = count;
 		this.open = open;

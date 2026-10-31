@@ -38,12 +38,6 @@ public abstract class DownloadScreen<T> extends PackListScreen {
 	private static final Logger LOGGER = LogUtils.getLogger();
 	/** Pause between packs so a big batch doesn't hammer the site. */
 	private static final long DELAY_BETWEEN_DOWNLOADS_MS = 500;
-	private static final int PANEL_WIDTH = 150;
-	private static final int MAX_DETAIL_LINES = 6;
-	private static final long HOVER_DELAY_MS = 350;
-	private static final long SECONDS_PER_IMAGE_MS = 2500;
-	private static final int PANEL_PADDING = 6;
-	private static final int LINE_HEIGHT = 10;
 
 	/** Text for the download button while a batch runs; one batch at a time across all sources. */
 	private static @Nullable String progress;
@@ -53,11 +47,6 @@ public abstract class DownloadScreen<T> extends PackListScreen {
 	/** Which pack each row button in the list belongs to, for the hover preview. */
 	private final Map<AbstractWidget, T> rows = new HashMap<>();
 	private @Nullable Button downloadButton;
-	// Hover panel state: which pack is hovered, since when, and which of its pictures is showing
-	private @Nullable T previewPack;
-	private long hoverStart;
-	private int imageIndex;
-	private long imageStart;
 
 	protected DownloadScreen(final @Nullable Screen lastScreen, final Component title) {
 		super(lastScreen, title);
@@ -244,107 +233,10 @@ public abstract class DownloadScreen<T> extends PackListScreen {
 		}
 	}
 
+	/** The hovered pack's pictures from its website, its name, and its details. */
 	@Override
-	public void extractRenderState(final GuiGraphicsExtractor graphics, final int mouseX, final int mouseY, final float a) {
-		super.extractRenderState(graphics, mouseX, mouseY, a);
-		AbstractWidget hovered = this.hoveredListWidget(mouseX, mouseY);
-		T pack = hovered != null ? this.rows.get(hovered) : null;
-		long now = Util.getMillis();
-		if (pack != this.previewPack) {
-			this.previewPack = pack;
-			this.hoverStart = now;
-			this.imageIndex = 0;
-			this.imageStart = now;
-		}
-		if (pack == null) {
-			return;
-		}
-		List<String> urls = this.imageUrls(pack);
-		RemoteImages.Image image = this.currentImage(urls, now);
-		// Like a tooltip, wait a moment so the panel doesn't flash up while the mouse just passes over the list
-		if (now - this.hoverStart >= HOVER_DELAY_MS) {
-			this.extractPreviewPanel(graphics, pack, image, urls.size(), now, mouseX, mouseY);
-		}
-	}
-
-	/**
-	 * The picture to show now. Packs with several pictures step through them: each stays up for a few seconds, or one full
-	 * loop if it's animated. Pictures that fail to load are skipped.
-	 */
-	private RemoteImages.Image currentImage(final List<String> urls, final long now) {
-		if (urls.isEmpty()) {
-			return RemoteImages.Image.FAILED;
-		}
-		for (int tries = 0; tries < urls.size(); tries++) {
-			RemoteImages.Image image = RemoteImages.get(urls.get(this.imageIndex % urls.size()));
-			if (image.failed() && urls.size() > 1) {
-				this.imageIndex++;
-				this.imageStart = now;
-				continue;
-			}
-			if (!image.loaded()) {
-				// Not loaded yet: its time on screen starts once it is
-				this.imageStart = now;
-			} else if (urls.size() > 1 && now - this.imageStart >= Math.max(SECONDS_PER_IMAGE_MS, image.durationMs())) {
-				this.imageIndex++;
-				this.imageStart = now;
-				continue;
-			}
-			return image;
-		}
-		return RemoteImages.Image.FAILED;
-	}
-
-	/** A compact tooltip-like panel, on the half of the screen away from the cursor so the hovered button stays visible. */
-	private void extractPreviewPanel(
-		final GuiGraphicsExtractor graphics, final T pack, final RemoteImages.Image image, final int imageCount, final long now, final int mouseX, final int mouseY
-	) {
-		int panelWidth = Math.min(PANEL_WIDTH, this.width / 2 - 2 * PANEL_PADDING - 8);
-		int imageHeight = 0;
-		int imageWidth = panelWidth;
-		if (image.loaded()) {
-			imageHeight = Math.min(this.height / 3, image.height() * panelWidth / Math.max(1, image.width()));
-			imageWidth = Math.min(panelWidth, image.width() * imageHeight / Math.max(1, image.height()));
-		} else if (!image.failed()) {
-			imageHeight = 9;
-		}
-
-		List<FormattedCharSequence> lines = new ArrayList<>(this.font.split(Component.literal(this.displayName(pack)).withStyle(ChatFormatting.BOLD), panelWidth));
-		List<FormattedCharSequence> details = this.font.split(this.details(pack), panelWidth);
-		if (details.size() > MAX_DETAIL_LINES) {
-			details = new ArrayList<>(details.subList(0, MAX_DETAIL_LINES));
-			details.add(Component.literal("…").withStyle(ChatFormatting.GRAY).getVisualOrderText());
-		}
-		lines.addAll(details);
-		int boxWidth = panelWidth + 2 * PANEL_PADDING;
-		int boxHeight = imageHeight + (imageHeight > 0 ? PANEL_PADDING : 0) + lines.size() * LINE_HEIGHT + 2 * PANEL_PADDING;
-
-		int x = mouseX < this.width / 2 ? this.width - boxWidth - 4 : 4;
-		int y = Math.max(4, Math.min(mouseY - boxHeight / 2, this.height - boxHeight - 4));
-
-		graphics.nextStratum();
-		Draw.roundRectOutlined(graphics, x, y, boxWidth, boxHeight, 6, this.theme().bar(), this.theme().accent());
-		int contentY = y + PANEL_PADDING;
-		Identifier texture = image.textureAt(now - this.imageStart);
-		if (texture != null) {
-			int imageX = x + PANEL_PADDING + (panelWidth - imageWidth) / 2;
-			graphics.blit(texture, imageX, contentY, imageX + imageWidth, contentY + imageHeight, 0.0F, 1.0F, 0.0F, 1.0F);
-			if (imageCount > 1) {
-				// "2/5" in the picture's corner when there are more pictures to come
-				String counter = (this.imageIndex % imageCount + 1) + "/" + imageCount;
-				int counterX = imageX + imageWidth - this.font.width(counter) - 2;
-				int counterY = contentY + imageHeight - 10;
-				graphics.fill(counterX - 2, counterY - 1, imageX + imageWidth, contentY + imageHeight, 0xA0000000);
-				graphics.text(this.font, counter, counterX, counterY, -1);
-			}
-			contentY += imageHeight + PANEL_PADDING;
-		} else if (!image.failed()) {
-			graphics.text(this.font, Component.translatable("tweakswitch.previewLoading").withStyle(ChatFormatting.GRAY), x + PANEL_PADDING, contentY, -1);
-			contentY += imageHeight + PANEL_PADDING;
-		}
-		for (FormattedCharSequence line : lines) {
-			graphics.text(this.font, line, x + PANEL_PADDING, contentY, -1);
-			contentY += LINE_HEIGHT;
-		}
+	protected @Nullable Preview previewFor(final AbstractWidget hovered) {
+		T pack = this.rows.get(hovered);
+		return pack == null ? null : new Preview(pack, Component.literal(this.displayName(pack)), this.details(pack), this.imageUrls(pack), List.of());
 	}
 }

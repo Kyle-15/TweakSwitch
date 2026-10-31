@@ -19,9 +19,9 @@ import org.jspecify.annotations.Nullable;
  */
 public class PackList extends ContainerObjectSelectionList<PackList.Entry> {
 	private static final int MAX_ROW_WIDTH = 310;
-	private static final int ROW_HEIGHT = 25;
+	private static final int ROW_HEIGHT = 20;
 	private static final int COLUMN_GAP = 10;
-	private static final int TILE_GAP = 5;
+	private static final int TILE_GAP = 4;
 	private static final int LINE_HEIGHT = 10;
 	/** Below this row width, grids use one column so names stay readable. */
 	private static final int MIN_TWO_COLUMN_WIDTH = 260;

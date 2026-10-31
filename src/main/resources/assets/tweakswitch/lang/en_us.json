@@ -65,5 +65,15 @@
 	"tweakswitch.updates.detail.upToDate": "You have the newest version (%s).",
 	"tweakswitch.updates.detail.noVersion": "Installed: %s. Modrinth has no version of this pack for Minecraft %s.",
 	"tweakswitch.updates.detail.unknown": "This file isn't on Modrinth or Vanilla Tweaks, so it can't be checked for updates.",
-	"tweakswitch.mr.sortBy": "Sort: %s"
+	"tweakswitch.mr.sortBy": "Sort: %s",
+	"tweakswitch.group": "Group: %s",
+	"tweakswitch.group.source": "Source",
+	"tweakswitch.group.changes": "Changes",
+	"tweakswitch.group.status": "On/Off",
+	"tweakswitch.group.name": "A–Z",
+	"tweakswitch.group.on": "On",
+	"tweakswitch.group.off": "Off",
+	"tweakswitch.group.unknown": "Looking inside…",
+	"tweakswitch.contents.changes": "Changes: %s",
+	"tweakswitch.contents.nothing": "Doesn't change any game files"
 }

@@ -176,8 +176,8 @@ public class ModrinthScreen extends DownloadScreen<Modrinth.Project> {
 	/** Their green on "Modrinth", then the page name, like the site's header. */
 	@Override
 	protected Component styledTitle() {
-		return Component.literal("Modrinth").withStyle(style -> style.withBold(true).withColor(Theme.MODRINTH.accent()))
-			.append(Component.literal("  Resource Packs for " + Modrinth.gameVersion()).withColor(Theme.MODRINTH.text()));
+		return Component.literal("Modrinth ").withStyle(style -> style.withBold(true).withColor(Theme.MODRINTH.accent()))
+			.append(Component.literal(Modrinth.gameVersion()).withColor(Theme.MODRINTH.text()));
 	}
 
 	/** A card like Modrinth's search results: icon, title and author, summary, tags and download count. */
@@ -214,7 +214,7 @@ public class ModrinthScreen extends DownloadScreen<Modrinth.Project> {
 
 	@Override
 	protected List<String> imageUrls(final Modrinth.Project project) {
-		return project.images();
+		return Modrinth.images(project);
 	}
 
 	@Override

@@ -28,6 +28,11 @@ public class ModsNeededScreen extends PackListScreen {
 	}
 
 	@Override
+	protected boolean hasPreviews() {
+		return false;
+	}
+
+	@Override
 	protected boolean hasSearch() {
 		return false;
 	}
