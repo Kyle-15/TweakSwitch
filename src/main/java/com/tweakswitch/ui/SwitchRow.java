@@ -37,7 +37,7 @@ public class SwitchRow extends CardButton {
 		this.tag = tag;
 		this.warning = warning;
 		this.on = on;
-		this.setTooltip(Tooltip.create(description));
+		this.setPlainTooltip(Tooltip.create(description));
 	}
 
 	@Override

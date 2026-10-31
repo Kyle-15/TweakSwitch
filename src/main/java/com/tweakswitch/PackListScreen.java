@@ -1,5 +1,6 @@
 package com.tweakswitch;
 
+import com.tweakswitch.compat.Compat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -421,7 +422,7 @@ public abstract class PackListScreen extends Screen {
 
 	@Override
 	public void onClose() {
-		this.minecraft.gui.setScreen(this.lastScreen);
+		Compat.setScreen(this.minecraft, this.lastScreen);
 	}
 
 	/** Rebuilds the rows, keeping the scroll position so expanding a category doesn't jump to the top. */

@@ -1,6 +1,6 @@
 # TweakSwitch
 
-A Fabric mod for Minecraft 26.3 that turns resource packs into simple on/off switches, and downloads packs for you from Vanilla Tweaks and Modrinth.
+A Fabric mod for Minecraft 26.1 to 26.3 that turns resource packs into simple on/off switches, and downloads packs for you from Vanilla Tweaks and Modrinth.
 
 - **Tabs:** packs you added yourself (**Imported**) and packs downloaded from **Vanilla Tweaks** or **Modrinth** each have their own tab, so it's clear where each came from.
 - **Switches:** every pack gets an ON/OFF switch. Group them by source, by what they change (Particles, GUI, Blocks…, with sub-groups like "Particles · Dripping"), by on/off, or A–Z, and flip a whole group with the switch on its header. Changes apply with one reload when you click Done.
@@ -13,11 +13,11 @@ A Fabric mod for Minecraft 26.3 that turns resource packs into simple on/off swi
 
 ## Install
 
-1. Install [Fabric Loader](https://fabricmc.net/use/installer/) for Minecraft **26.3** (loader 0.19.5 or newer).
+1. Install [Fabric Loader](https://fabricmc.net/use/installer/) for your Minecraft version (loader 0.19.5 or newer).
 2. Download these into your `.minecraft/mods` folder:
-   - **TweakSwitch:** the `.jar` from this repo's [Releases](../../releases) page
-   - **[Fabric API](https://modrinth.com/mod/fabric-api)** for 26.3 (required)
-   - **[Mod Menu](https://modrinth.com/mod/modmenu)** for 26.3 (optional, adds TweakSwitch to the mods list)
+   - **TweakSwitch:** from this repo's [Releases](../../releases) page, the jar ending in your version: `+26.1` (for 26.1 to 26.1.2), `+26.2` or `+26.3`
+   - **[Fabric API](https://modrinth.com/mod/fabric-api)** for your version (required)
+   - **[Mod Menu](https://modrinth.com/mod/modmenu)** for your version (optional, adds TweakSwitch to the mods list)
 3. Launch Minecraft with the Fabric profile.
 
 ## Use
@@ -33,10 +33,12 @@ A Fabric mod for Minecraft 26.3 that turns resource packs into simple on/off swi
 Needs Java 25.
 
 ```bash
-./gradlew build
+./scripts/build-all.sh
 ```
 
-The mod jar ends up in `build/libs/`. `./gradlew runClientGameTest` runs the in-game screenshot test (needs internet).
+That builds a jar for every supported Minecraft version into `build/release/`. For just one version, run `./gradlew build -Pmc=26.2` (default `26.3`); the jar lands in `build/libs/`.
+
+Each version's dependencies are in `versions/<mc>.properties`, and the few game calls whose names differ between versions are in `src/compat/<version>/`. `./gradlew runClientGameTest -Pmc=26.2` runs the in-game screenshot test on that version (needs internet).
 
 ## Network use
 

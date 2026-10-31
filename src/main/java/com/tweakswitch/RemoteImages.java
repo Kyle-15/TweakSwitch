@@ -2,6 +2,7 @@ package com.tweakswitch;
 
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.logging.LogUtils;
+import com.tweakswitch.compat.Compat;
 import com.twelvemonkeys.imageio.plugins.webp.WebPImageReaderSpi;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
@@ -21,8 +22,6 @@ import javax.imageio.ImageReader;
 import javax.imageio.metadata.IIOMetadata;
 import javax.imageio.stream.ImageInputStream;
 import net.minecraft.client.Minecraft;
-import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.renderpearl.api.textures.FilterMode;
 import java.util.function.Supplier;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.resources.Identifier;
@@ -76,7 +75,7 @@ public final class RemoteImages {
 	private static final class SmoothTexture extends DynamicTexture {
 		SmoothTexture(final Supplier<String> label, final NativeImage image) {
 			super(label, image);
-			this.sampler = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR);
+			this.sampler = Compat.smoothSampler();
 		}
 	}
 

@@ -1,6 +1,6 @@
 package com.tweakswitch;
 
-import com.mojang.blaze3d.Blaze3D;
+import com.tweakswitch.compat.Compat;
 import com.mojang.logging.LogUtils;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -28,12 +28,9 @@ import com.tweakswitch.ui.SwitchRow;
 import com.tweakswitch.ui.ThemedButton;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.network.chat.MutableComponent;
-import java.io.InputStream;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.resources.Identifier;
-import net.minecraft.server.packs.PackMetadataResources;
-import net.minecraft.server.packs.resources.IoSupplier;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.toasts.SystemToast;
 import net.minecraft.client.gui.screens.ConfirmScreen;
@@ -149,7 +146,7 @@ public class TweakSwitchScreen extends PackListScreen {
 		// Look inside every pack in the background, for grouping by what it changes, searching its files and previews
 		List<Path> files = this.ourPacks().stream().map(TweakSwitchScreen::path).toList();
 		PackContents.analyzeAll(files, () -> {
-			if (this.minecraft.gui.screen() == this) {
+			if (Compat.screen(this.minecraft) == this) {
 				this.refreshList();
 			}
 		});
@@ -219,13 +216,13 @@ public class TweakSwitchScreen extends PackListScreen {
 	@Override
 	protected void addFooter() {
 		this.addFooterButtons(
-			this.button(Component.translatable("tweakswitch.getVanillaTweaks"), 100, button -> this.minecraft.gui.setScreen(new VanillaTweaksScreen(this)))
+			this.button(Component.translatable("tweakswitch.getVanillaTweaks"), 100, button -> Compat.setScreen(this.minecraft, new VanillaTweaksScreen(this)))
 				.withTooltip(Component.translatable("tweakswitch.getVanillaTweaks.tooltip")),
-			this.button(Component.translatable("tweakswitch.getModrinth"), 80, button -> this.minecraft.gui.setScreen(new ModrinthScreen(this)))
+			this.button(Component.translatable("tweakswitch.getModrinth"), 80, button -> Compat.setScreen(this.minecraft, new ModrinthScreen(this)))
 				.withTooltip(Component.translatable("tweakswitch.getModrinth.tooltip")),
-			this.button(Component.translatable("tweakswitch.getUpdates"), 70, button -> this.minecraft.gui.setScreen(new UpdatesScreen(this)))
+			this.button(Component.translatable("tweakswitch.getUpdates"), 70, button -> Compat.setScreen(this.minecraft, new UpdatesScreen(this)))
 				.withTooltip(Component.translatable("tweakswitch.getUpdates.tooltip")),
-			this.button(Component.translatable("tweakswitch.openFolder"), 80, button -> Blaze3D.openPath(this.packsDirCreated())),
+			this.button(Component.translatable("tweakswitch.openFolder"), 80, button -> Compat.openFolder(this.packsDirCreated())),
 			this.primaryButton(CommonComponents.GUI_DONE, 60, button -> this.onClose())
 		);
 
@@ -400,16 +397,13 @@ public class TweakSwitchScreen extends PackListScreen {
 	/** The pack's own pack.png as a texture, loaded once per session; vanilla's "unknown pack" picture if it has none. */
 	private static Identifier packIcon(final Pack pack) {
 		return PACK_ICONS.computeIfAbsent(pack.getId(), id -> {
-			try (PackMetadataResources resources = pack.openMetadata()) {
-				IoSupplier<InputStream> png = resources.getRootResource("pack.png");
-				if (png != null) {
-					try (InputStream stream = png.get()) {
-						byte[] bytes = stream.readAllBytes();
-						PACK_ICON_HASHES.put(id, HexFormat.of().formatHex(MessageDigest.getInstance("SHA-1").digest(bytes)));
-						Identifier location = Identifier.fromNamespaceAndPath(TweakSwitch.MOD_ID, "pack_icon/" + Integer.toHexString(id.hashCode()) + "_" + PACK_ICONS.size());
-						Minecraft.getInstance().getTextureManager().register(location, new DynamicTexture(location::toString, NativeImage.read(bytes)));
-						return location;
-					}
+			try {
+				byte[] bytes = Compat.readPackRoot(pack, "pack.png");
+				if (bytes != null) {
+					PACK_ICON_HASHES.put(id, HexFormat.of().formatHex(MessageDigest.getInstance("SHA-1").digest(bytes)));
+					Identifier location = Identifier.fromNamespaceAndPath(TweakSwitch.MOD_ID, "pack_icon/" + Integer.toHexString(id.hashCode()) + "_" + PACK_ICONS.size());
+					Minecraft.getInstance().getTextureManager().register(location, new DynamicTexture(location::toString, NativeImage.read(bytes)));
+					return location;
 				}
 			} catch (Exception e) {
 				LOGGER.debug("No icon for pack {}", id, e);
@@ -421,7 +415,7 @@ public class TweakSwitchScreen extends PackListScreen {
 	@Override
 	public void onClose() {
 		this.applyChanges();
-		this.minecraft.gui.setScreen(this.lastScreen);
+		Compat.setScreen(this.minecraft, this.lastScreen);
 	}
 
 	private void applyChanges() {
@@ -440,7 +434,7 @@ public class TweakSwitchScreen extends PackListScreen {
 	@Override
 	public void onFilesDrop(final List<Path> files) {
 		String names = files.stream().map(path -> path.getFileName().toString()).collect(Collectors.joining(", "));
-		this.minecraft.gui.setScreen(new ConfirmScreen(confirmed -> {
+		Compat.setScreen(this.minecraft, new ConfirmScreen(confirmed -> {
 			if (confirmed) {
 				this.importPacks(files);
 				this.repository.reload();
@@ -450,7 +444,7 @@ public class TweakSwitchScreen extends PackListScreen {
 				settings.save();
 			}
 
-			this.minecraft.gui.setScreen(this);
+			Compat.setScreen(this.minecraft, this);
 		}, Component.translatable("tweakswitch.dropConfirm"), Component.literal(names)));
 	}
 

@@ -1,5 +1,6 @@
 package com.tweakswitch;
 
+import com.tweakswitch.compat.Compat;
 import com.mojang.logging.LogUtils;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -295,7 +296,7 @@ public class ModrinthScreen extends DownloadScreen<Modrinth.Project> {
 				if (missing.isEmpty()) {
 					proceed.accept(batch);
 				} else {
-					this.minecraft.gui.setScreen(new ModsNeededScreen(this, missing, () -> proceed.accept(batch)));
+					Compat.setScreen(this.minecraft, new ModsNeededScreen(this, missing, () -> proceed.accept(batch)));
 				}
 			});
 		}, "TweakSwitch requirement check");

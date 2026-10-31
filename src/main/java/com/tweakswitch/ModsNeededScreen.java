@@ -1,5 +1,6 @@
 package com.tweakswitch;
 
+import com.tweakswitch.compat.Compat;
 import java.util.List;
 import java.util.Map;
 import net.minecraft.ChatFormatting;
@@ -55,7 +56,7 @@ public class ModsNeededScreen extends PackListScreen {
 	protected void addFooter() {
 		this.addFooterButtons(
 			this.primaryButton(Component.translatable("tweakswitch.mods.downloadAnyway"), 150, button -> {
-				this.minecraft.gui.setScreen(this.lastScreen);
+				Compat.setScreen(this.minecraft, this.lastScreen);
 				this.onDownload.run();
 			}),
 			this.button(CommonComponents.GUI_BACK, 100, button -> this.onClose())

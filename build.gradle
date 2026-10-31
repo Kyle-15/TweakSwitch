@@ -2,6 +2,18 @@ plugins {
 	id 'net.fabricmc.fabric-loom' version "${loom_version}"
 }
 
+// Which Minecraft version to build for: ./gradlew build -Pmc=26.2 (default: the newest). Each version's dependency
+// versions live in versions/<mc>.properties, and the few calls whose names differ between versions in src/compat/<dir>.
+def mc = providers.gradleProperty("mc").getOrElse("26.3")
+def versionFile = file("versions/${mc}.properties")
+if (!versionFile.exists()) {
+	throw new GradleException("No versions/${mc}.properties; supported: " + file("versions").list().collect { it - ".properties" }.sort().join(", "))
+}
+def versionProperties = new Properties()
+versionFile.withInputStream { versionProperties.load(it) }
+versionProperties.each { key, value -> ext.set(key, value) }
+version = "${project.mod_version}+${mc}"
+
 fabricApi {
 	// Screenshot tests: ./gradlew runClientGameTest
 	configureTests {
@@ -44,12 +56,16 @@ dependencies {
 	gametestCompileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
 }
 
+sourceSets.main.java.srcDir("src/compat/${project.compat}/java")
+
 processResources {
 	def version = project.version
+	def minecraftRange = project.minecraft_range
 	inputs.property "version", version
+	inputs.property "minecraftRange", minecraftRange
 
 	filesMatching("fabric.mod.json") {
-		expand "version": version
+		expand "version": version, "minecraft": minecraftRange
 	}
 }
 

@@ -41,12 +41,14 @@ Ideas for future versions, roughly in the order they'd help most. Tick them off 
 
 ## Bigger projects
 
-- [ ] **More Minecraft versions.** 26.1 and 26.2 need only a handful of renamed methods (measured), one jar per version. 1.21.x is a much bigger port.
+- [ ] **1.21.x support.** A much bigger port: older code format, a different screen system and Java 21.
+- [ ] **26.4** once it's released: add `versions/26.4.properties` and, if needed, a `src/compat/26.4/` file.
 - [ ] **Vanilla Tweaks data packs and crafting tweaks.** Per-world gameplay tweaks, installed into each world's folder.
 - [ ] **Translations** into other languages.
 
 ## Done
 
+- [x] **Minecraft 26.1, 26.2 and 26.3:** one jar per version family from one codebase, all passing the in-game test (1.2.1)
 - [x] **Shift previews** on the TweakSwitch, Vanilla Tweaks and Modrinth screens: tap Shift to turn the preview panel on or off (1.2.0)
 - [x] **See what any pack does:** previews show the textures inside a pack, plus "Changes: Particles (12)…" (1.2.0)
 - [x] **Group switches** by source, by what they change, by on/off, or A–Z (1.2.0)

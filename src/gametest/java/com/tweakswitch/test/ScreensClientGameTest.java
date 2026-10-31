@@ -1,5 +1,6 @@
 package com.tweakswitch.test;
 
+import com.tweakswitch.compat.Compat;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -60,7 +61,7 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 				.filter(entry -> entry.getClass().getName().startsWith("com.tweakswitch"))
 				.findFirst()
 				.orElseThrow(() -> new AssertionError("TweakSwitch has no Mod Menu entrypoint"));
-			if (!(api.getModConfigScreenFactory().create(minecraft.gui.screen()) instanceof TweakSwitchScreen)) {
+			if (!(api.getModConfigScreenFactory().create(Compat.screen(minecraft)) instanceof TweakSwitchScreen)) {
 				throw new AssertionError("Mod Menu config button doesn't open TweakSwitch");
 			}
 		});
@@ -84,8 +85,8 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		context.waitTicks(5);
 		context.takeScreenshot("tweakswitch-wide-header");
 		int[] header = context.computeOnClient(minecraft -> {
-			EditBox search = (EditBox) field(PackListScreen.class, minecraft.gui.screen(), "search");
-			return new int[] {search.getX(), search.getRight(), minecraft.gui.screen().width};
+			EditBox search = (EditBox) field(PackListScreen.class, Compat.screen(minecraft), "search");
+			return new int[] {search.getX(), search.getRight(), Compat.screen(minecraft).width};
 		});
 		if (header[0] < header[2] / 4) {
 			throw new AssertionError("Header looks stuck to the left: search starts at " + header[0] + " of " + header[2]);
@@ -175,7 +176,7 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 
 		context.takeScreenshot("tweakswitch-picker-picked");
 
-		context.runOnClient(minecraft -> ((Button) field(DownloadScreen.class, minecraft.gui.screen(), "downloadButton")).onPress(null));
+		context.runOnClient(minecraft -> ((Button) field(DownloadScreen.class, Compat.screen(minecraft), "downloadButton")).onPress(null));
 		context.waitFor(minecraft -> field(DownloadScreen.class, null, "progress") == null, 1200);
 		context.waitTicks(10);
 		context.takeScreenshot("tweakswitch-picker-downloaded");
@@ -190,7 +191,7 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 			refresh(minecraft);
 		});
 		context.waitTicks(5);
-		context.runOnClient(minecraft -> minecraft.gui.toastManager().clear());
+		context.runOnClient(minecraft -> Compat.toasts(minecraft).clear());
 		context.waitTicks(2);
 		context.takeScreenshot("tweakswitch-switches-downloaded");
 
@@ -199,7 +200,7 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		context.waitForScreen(ModrinthScreen.class);
 		context.waitFor(minecraft -> !rows(minecraft).isEmpty(), 600);
 		context.waitTicks(5);
-		context.runOnClient(minecraft -> minecraft.gui.toastManager().clear());
+		context.runOnClient(minecraft -> Compat.toasts(minecraft).clear());
 		context.waitTicks(2);
 		context.takeScreenshot("tweakswitch-modrinth-results");
 		AbstractWidget firstResult = context.computeOnClient(minecraft -> rows(minecraft).keySet().stream()
@@ -217,11 +218,11 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		context.waitFor(minecraft -> "sky".equals(field(ModrinthScreen.class, null, "query")) && !(boolean) field(ModrinthScreen.class, null, "loading"), 600);
 		context.waitTicks(5);
 		context.takeScreenshot("tweakswitch-modrinth-search");
-		context.runOnClient(minecraft -> ((Button) field(DownloadScreen.class, minecraft.gui.screen(), "downloadButton")).onPress(null));
+		context.runOnClient(minecraft -> ((Button) field(DownloadScreen.class, Compat.screen(minecraft), "downloadButton")).onPress(null));
 		context.waitFor(minecraft -> field(DownloadScreen.class, null, "progress") == null, 1200);
 		context.getInput().setCursorPos(0, 0);
 		context.waitTicks(10);
-		context.runOnClient(minecraft -> minecraft.gui.toastManager().clear());
+		context.runOnClient(minecraft -> Compat.toasts(minecraft).clear());
 		context.waitTicks(2);
 		context.takeScreenshot("tweakswitch-modrinth-downloaded");
 		// A pack needing a mod brings up the warning with links; a pack needing another pack pulls it in too.
@@ -230,16 +231,21 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		deleteQuietly(packs.resolve("MR - Fresh Animations.zip"));
 		pickModrinthResult(context, "Hyper Punchy");
 		pickModrinthResult(context, "Fresh Animations: Extensions");
-		context.runOnClient(minecraft -> ((Button) field(DownloadScreen.class, minecraft.gui.screen(), "downloadButton")).onPress(null));
+		context.runOnClient(minecraft -> ((Button) field(DownloadScreen.class, Compat.screen(minecraft), "downloadButton")).onPress(null));
 		context.waitForScreen(ModsNeededScreen.class);
 		context.waitTicks(5);
-		context.runOnClient(minecraft -> minecraft.gui.toastManager().clear());
+		context.runOnClient(minecraft -> Compat.toasts(minecraft).clear());
 		context.waitTicks(2);
 		context.takeScreenshot("tweakswitch-mods-needed");
 		context.clickScreenButton("tweakswitch.mods.downloadAnyway");
 		context.waitForScreen(ModrinthScreen.class);
 		context.waitFor(minecraft -> field(DownloadScreen.class, null, "progress") == null, 1200);
-		for (String file : List.of("MR - Hyper Punchy.zip", "MR - Fresh Animations_ Extensions.zip", "MR - Fresh Animations.zip")) {
+		// Fresh Animations comes along only if this game version's Extensions declares it as required (26.3's does, 26.2's doesn't)
+		List<String> expected = new java.util.ArrayList<>(List.of("MR - Hyper Punchy.zip", "MR - Fresh Animations_ Extensions.zip"));
+		if (requires("fresh-animations-extensions", "50dA9Sha")) {
+			expected.add("MR - Fresh Animations.zip");
+		}
+		for (String file : expected) {
 			if (!Files.exists(packs.resolve(file))) {
 				throw new AssertionError("Expected " + file + " to be downloaded");
 			}
@@ -251,7 +257,7 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 			throw new AssertionError("After a Modrinth download the Modrinth tab should show");
 		}
 		context.waitTicks(5);
-		context.runOnClient(minecraft -> minecraft.gui.toastManager().clear());
+		context.runOnClient(minecraft -> Compat.toasts(minecraft).clear());
 		context.waitTicks(2);
 		context.takeScreenshot("tweakswitch-switches-with-modrinth");
 
@@ -276,13 +282,13 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 			try {
 				Method method = PackListScreen.class.getDeclaredMethod("setSearchText", String.class);
 				method.setAccessible(true);
-				method.invoke(minecraft.gui.screen(), "flame");
+				method.invoke(Compat.screen(minecraft), "flame");
 			} catch (ReflectiveOperationException e) {
 				throw new RuntimeException(e);
 			}
 		});
 		context.waitTicks(3);
-		Map<AbstractWidget, ?> shownRows = context.computeOnClient(minecraft -> (Map<AbstractWidget, ?>) field(TweakSwitchScreen.class, minecraft.gui.screen(), "switchRows"));
+		Map<AbstractWidget, ?> shownRows = context.computeOnClient(minecraft -> (Map<AbstractWidget, ?>) field(TweakSwitchScreen.class, Compat.screen(minecraft), "switchRows"));
 		if (shownRows.size() != 1) {
 			throw new AssertionError("Searching \"flame\" should show just untitled-pack, showed " + shownRows.size());
 		}
@@ -294,7 +300,7 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 			try {
 				Method method = PackListScreen.class.getDeclaredMethod("setSearchText", String.class);
 				method.setAccessible(true);
-				method.invoke(minecraft.gui.screen(), "");
+				method.invoke(Compat.screen(minecraft), "");
 			} catch (ReflectiveOperationException e) {
 				throw new RuntimeException(e);
 			}
@@ -330,7 +336,7 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 			try {
 				Method method = PackListScreen.class.getDeclaredMethod("setSearchText", String.class);
 				method.setAccessible(true);
-				method.invoke(minecraft.gui.screen(), "particles");
+				method.invoke(Compat.screen(minecraft), "particles");
 			} catch (ReflectiveOperationException e) {
 				throw new RuntimeException(e);
 			}
@@ -342,13 +348,13 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 			try {
 				Method method = PackListScreen.class.getDeclaredMethod("setSearchText", String.class);
 				method.setAccessible(true);
-				method.invoke(minecraft.gui.screen(), "dripping");
+				method.invoke(Compat.screen(minecraft), "dripping");
 			} catch (ReflectiveOperationException e) {
 				throw new RuntimeException(e);
 			}
 		});
 		context.waitTicks(5);
-		AbstractWidget lavaRow = context.computeOnClient(minecraft -> ((Map<AbstractWidget, Pack>) field(TweakSwitchScreen.class, minecraft.gui.screen(), "switchRows"))
+		AbstractWidget lavaRow = context.computeOnClient(minecraft -> ((Map<AbstractWidget, Pack>) field(TweakSwitchScreen.class, Compat.screen(minecraft), "switchRows"))
 			.entrySet().stream().filter(entry -> entry.getValue().getTitle().getString().equals("particles-dripping-lava")).findFirst().orElseThrow().getKey());
 		moveTo(context, lavaRow);
 		context.waitTicks(30);
@@ -358,23 +364,23 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		context.waitTicks(3);
 
 		// Updates: swap Fresh Animations for an older version, then update it back
-		String newSha1 = sha1(packs.resolve("MR - Fresh Animations.zip"));
+		String newSha1 = freshAnimationsSha1(0);
 		String oldSha1 = installOlderVersion(packs.resolve("MR - Fresh Animations.zip"));
 		if (!sha1(packs.resolve("MR - Fresh Animations.zip")).equals(oldSha1)) {
 			throw new AssertionError("Older Fresh Animations didn't install cleanly");
 		}
 		context.clickScreenButton("tweakswitch.getUpdates");
 		context.waitForScreen(UpdatesScreen.class);
-		context.waitFor(minecraft -> field(UpdatesScreen.class, minecraft.gui.screen(), "items") != null, 1200);
+		context.waitFor(minecraft -> field(UpdatesScreen.class, Compat.screen(minecraft), "items") != null, 1200);
 		context.waitTicks(5);
-		context.runOnClient(minecraft -> minecraft.gui.toastManager().clear());
+		context.runOnClient(minecraft -> Compat.toasts(minecraft).clear());
 		context.waitTicks(2);
 		context.takeScreenshot("tweakswitch-updates");
-		context.runOnClient(minecraft -> ((Button) field(DownloadScreen.class, minecraft.gui.screen(), "downloadButton")).onPress(null));
+		context.runOnClient(minecraft -> ((Button) field(DownloadScreen.class, Compat.screen(minecraft), "downloadButton")).onPress(null));
 		context.waitFor(minecraft -> field(DownloadScreen.class, null, "progress") == null
-			&& field(UpdatesScreen.class, minecraft.gui.screen(), "items") != null, 1200);
+			&& field(UpdatesScreen.class, Compat.screen(minecraft), "items") != null, 1200);
 		context.waitTicks(5);
-		context.runOnClient(minecraft -> minecraft.gui.toastManager().clear());
+		context.runOnClient(minecraft -> Compat.toasts(minecraft).clear());
 		context.waitTicks(2);
 		context.takeScreenshot("tweakswitch-updates-done");
 		if (!sha1(packs.resolve("MR - Fresh Animations.zip")).equals(newSha1)) {
@@ -386,11 +392,11 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		// Switch one on and apply it: the pack should be selected and resources reloaded
 		String packId = "tweakswitch/VT - Cherry Picking.zip";
 		context.runOnClient(minecraft -> {
-			Map<String, Boolean> pending = (Map<String, Boolean>) field(TweakSwitchScreen.class, minecraft.gui.screen(), "pending");
+			Map<String, Boolean> pending = (Map<String, Boolean>) field(TweakSwitchScreen.class, Compat.screen(minecraft), "pending");
 			pending.put(packId, true);
 		});
 		context.clickScreenButton("gui.done");
-		context.waitFor(minecraft -> minecraft.gui.overlay() == null && minecraft.gui.screen() instanceof TitleScreen, 1200);
+		context.waitFor(minecraft -> !Compat.loading(minecraft) && Compat.screen(minecraft) instanceof TitleScreen, 1200);
 		boolean applied = context.computeOnClient(minecraft -> minecraft.getResourcePackRepository().getSelectedIds().contains(packId)
 			&& minecraft.options.resourcePacks.contains(packId));
 		if (!applied) {
@@ -404,7 +410,7 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 			try {
 				Method method = PackListScreen.class.getDeclaredMethod("setSearchText", String.class);
 				method.setAccessible(true);
-				method.invoke(minecraft.gui.screen(), title);
+				method.invoke(Compat.screen(minecraft), title);
 			} catch (ReflectiveOperationException e) {
 				throw new RuntimeException(e);
 			}
@@ -419,6 +425,34 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 				.getKey();
 			row.onPress(null);
 		});
+	}
+
+	/** Whether this game version's newest version of {@code slug} lists {@code projectId} as required. */
+	private static boolean requires(final String slug, final String projectId) {
+		for (com.google.gson.JsonElement dependency : versions(slug).get(0).getAsJsonObject().getAsJsonArray("dependencies")) {
+			JsonObject object = dependency.getAsJsonObject();
+			if (projectId.equals(object.has("project_id") && !object.get("project_id").isJsonNull() ? object.get("project_id").getAsString() : null)
+				&& "required".equals(object.get("dependency_type").getAsString())) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** SHA-1 of Fresh Animations' primary file, 0 = newest version for this game version. */
+	private static String freshAnimationsSha1(final int index) {
+		JsonObject file = versions("fresh-animations").get(index).getAsJsonObject().getAsJsonArray("files").get(0).getAsJsonObject();
+		return file.getAsJsonObject("hashes").get("sha1").getAsString();
+	}
+
+	private static JsonArray versions(final String slug) {
+		try {
+			String url = "https://api.modrinth.com/v2/project/" + slug + "/version?game_versions="
+				+ URLEncoder.encode("[\"" + Modrinth.gameVersion() + "\"]", StandardCharsets.UTF_8) + "&loaders=" + URLEncoder.encode("[\"minecraft\"]", StandardCharsets.UTF_8);
+			return JsonParser.parseString(WebClient.getString(URI.create(url))).getAsJsonArray();
+		} catch (Exception e) {
+			throw new RuntimeException(e);
+		}
 	}
 
 	/** Replaces the file with the oldest Fresh Animations version for this game version and returns that file's SHA-1. */
@@ -565,7 +599,7 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		try {
 			Method method = PackListScreen.class.getDeclaredMethod("refreshList");
 			method.setAccessible(true);
-			method.invoke(minecraft.gui.screen());
+			method.invoke(Compat.screen(minecraft));
 		} catch (ReflectiveOperationException e) {
 			throw new RuntimeException(e);
 		}
@@ -583,6 +617,6 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 	}
 
 	private static Map<AbstractWidget, ?> rows(final Minecraft minecraft) {
-		return minecraft.gui.screen() instanceof DownloadScreen<?> screen ? (Map<AbstractWidget, ?>) field(DownloadScreen.class, screen, "rows") : Map.of();
+		return Compat.screen(minecraft) instanceof DownloadScreen<?> screen ? (Map<AbstractWidget, ?>) field(DownloadScreen.class, screen, "rows") : Map.of();
 	}
 }

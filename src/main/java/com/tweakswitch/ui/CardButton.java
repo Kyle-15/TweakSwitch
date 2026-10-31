@@ -5,9 +5,11 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractButton;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.input.InputWithModifiers;
 import net.minecraft.network.chat.Component;
+import org.jspecify.annotations.Nullable;
 
 /** A clickable area that draws itself however its subclass likes: a switch card, a tile, a header. */
 public abstract class CardButton extends AbstractButton {
@@ -30,16 +32,17 @@ public abstract class CardButton extends AbstractButton {
 		this.defaultButtonNarrationText(output);
 	}
 
-	/** The Shift preview panel shows more than a tooltip would, so plain tooltips stay hidden while it's on. */
-	@Override
-	protected void extractTooltipForNextRenderPass(final GuiGraphicsExtractor graphics, final int mouseX, final int mouseY) {
-		if (!PackListScreen.previewsOn()) {
-			super.extractTooltipForNextRenderPass(graphics, mouseX, mouseY);
-		}
+	/** Shown on hover, except while the Shift preview panel is on (it shows more than a tooltip would). */
+	private @Nullable Tooltip plainTooltip;
+
+	public void setPlainTooltip(final @Nullable Tooltip tooltip) {
+		this.plainTooltip = tooltip;
+		this.setTooltip(tooltip);
 	}
 
 	@Override
 	protected final void extractContents(final GuiGraphicsExtractor graphics, final int mouseX, final int mouseY, final float a) {
+		this.setTooltip(PackListScreen.previewsOn() ? null : this.plainTooltip);
 		this.draw(graphics, Minecraft.getInstance().font, this.isHoveredOrFocused() && this.active);
 	}
 

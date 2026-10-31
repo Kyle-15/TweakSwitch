@@ -1,5 +1,6 @@
 package com.tweakswitch;
 
+import com.tweakswitch.compat.Compat;
 import com.mojang.blaze3d.platform.InputConstants;
 import java.nio.file.Path;
 import net.fabricmc.api.ClientModInitializer;
@@ -27,12 +28,12 @@ public class TweakSwitch implements ClientModInitializer {
 
 	@Override
 	public void onInitializeClient() {
-		openKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.tweakswitch.open", InputConstants.Type.KEYBOARD, InputConstants.KEY_K, CATEGORY));
+		openKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.tweakswitch.open", Compat.keyboard(), InputConstants.KEY_K, CATEGORY));
 
 		ClientTickEvents.END_CLIENT_TICK.register(minecraft -> {
 			while (openKey.consumeClick()) {
-				if (minecraft.gui.screen() == null) {
-					minecraft.gui.setScreen(new TweakSwitchScreen(null));
+				if (Compat.screen(minecraft) == null) {
+					Compat.setScreen(minecraft, new TweakSwitchScreen(null));
 				}
 			}
 		});
@@ -42,7 +43,7 @@ public class TweakSwitch implements ClientModInitializer {
 			if (screen instanceof PackSelectionScreen) {
 				Screens.getWidgets(screen).add(Button.builder(Component.translatable("tweakswitch.title"), button -> {
 					screen.onClose();
-					minecraft.gui.setScreen(new TweakSwitchScreen(minecraft.gui.screen()));
+					Compat.setScreen(minecraft, new TweakSwitchScreen(Compat.screen(minecraft)));
 				}).bounds(6, 6, 80, 20).build());
 			}
 		});

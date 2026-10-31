@@ -1,5 +1,6 @@
 package com.tweakswitch;
 
+import com.tweakswitch.compat.Compat;
 import com.mojang.logging.LogUtils;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -213,7 +214,7 @@ public abstract class DownloadScreen<T> extends PackListScreen {
 			this.minecraft.execute(() -> {
 				progress = null;
 				SystemToast.addOrUpdate(
-					this.minecraft.gui.toastManager(),
+					Compat.toasts(this.minecraft),
 					SystemToast.SystemToastId.PERIODIC_NOTIFICATION,
 					Component.translatable(done == 1 ? "tweakswitch.doneOne" : "tweakswitch.done", done),
 					failures > 0 ? Component.translatable("tweakswitch.someFailed", failures).withStyle(ChatFormatting.RED) : Component.translatable("tweakswitch.doneHint")
@@ -227,7 +228,7 @@ public abstract class DownloadScreen<T> extends PackListScreen {
 	}
 
 	protected void refreshIfShown() {
-		if (this.minecraft.gui.screen() == this) {
+		if (Compat.screen(this.minecraft) == this) {
 			this.refreshList();
 			this.updateDownloadButton();
 		}
