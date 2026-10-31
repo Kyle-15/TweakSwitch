@@ -182,6 +182,13 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 
 		context.clickScreenButton("gui.done");
 		context.waitForScreen(TweakSwitchScreen.class);
+		if (TweakSwitchScreen.Tab.fromSettingsForTest() != TweakSwitchScreen.Tab.VANILLA_TWEAKS) {
+			throw new AssertionError("After a Vanilla Tweaks download the Vanilla Tweaks tab should show");
+		}
+		context.runOnClient(minecraft -> {
+			Settings.get().groupBy = TweakSwitchScreen.GroupBy.SOURCE.name();
+			refresh(minecraft);
+		});
 		context.waitTicks(5);
 		context.runOnClient(minecraft -> minecraft.gui.toastManager().clear());
 		context.waitTicks(2);
@@ -240,6 +247,9 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 
 		context.clickScreenButton("gui.done");
 		context.waitForScreen(TweakSwitchScreen.class);
+		if (TweakSwitchScreen.Tab.fromSettingsForTest() != TweakSwitchScreen.Tab.MODRINTH) {
+			throw new AssertionError("After a Modrinth download the Modrinth tab should show");
+		}
 		context.waitTicks(5);
 		context.runOnClient(minecraft -> minecraft.gui.toastManager().clear());
 		context.waitTicks(2);
@@ -254,6 +264,7 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 			throw new AssertionError("untitled-pack should be recognised as a particles pack");
 		}
 		context.runOnClient(minecraft -> {
+			Settings.get().tab = TweakSwitchScreen.Tab.IMPORTED.name();
 			Settings.get().groupBy = TweakSwitchScreen.GroupBy.CHANGES.name();
 			refresh(minecraft);
 		});
@@ -308,6 +319,7 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 			throw new AssertionError("Expected subject Dripping, got " + PackContents.cached(drippingLava).subject());
 		}
 		context.runOnClient(minecraft -> {
+			Settings.get().tab = TweakSwitchScreen.Tab.IMPORTED.name();
 			Settings.get().groupBy = TweakSwitchScreen.GroupBy.CHANGES.name();
 			refresh(minecraft);
 		});

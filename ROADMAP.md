@@ -50,6 +50,7 @@ Ideas for future versions, roughly in the order they'd help most. Tick them off 
 - [x] **Shift previews** on the TweakSwitch, Vanilla Tweaks and Modrinth screens: tap Shift to turn the preview panel on or off (1.2.0)
 - [x] **See what any pack does:** previews show the textures inside a pack, plus "Changes: Particles (12)…" (1.2.0)
 - [x] **Group switches** by source, by what they change, by on/off, or A–Z (1.2.0)
+- [x] **Tabs for where packs came from:** Imported, Vanilla Tweaks and Modrinth each have their own tab with a count, so your own packs and downloads don't mix (1.2.0)
 - [x] **Sub-groups** in "Changes" mode for packs about the same thing ("Particles · Dripping") (1.2.0)
 - [x] **Whole-group switch** on each group header turns every pack in it on or off (1.2.0)
 - [x] **Texture icons** for packs that share one logo or have none, so split-up packs are easy to tell apart (1.2.0)

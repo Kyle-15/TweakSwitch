@@ -16,7 +16,9 @@ public final class Settings {
 	/** Whether the hover preview panel shows; tap Shift to flip it. Off by default so it stays out of the way. */
 	public boolean previews = false;
 	/** How the TweakSwitch screen groups packs: a {@link TweakSwitchScreen.GroupBy} name. */
-	public String groupBy = "SOURCE";
+	public String groupBy = "CHANGES";
+	/** Which tab the TweakSwitch screen shows: a {@link TweakSwitchScreen.Tab} name. */
+	public String tab = "IMPORTED";
 
 	private static Path file() {
 		return TweakSwitch.packsDir().getParent().resolve("settings.json");

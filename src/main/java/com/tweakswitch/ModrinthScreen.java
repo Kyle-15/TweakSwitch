@@ -192,6 +192,16 @@ public class ModrinthScreen extends DownloadScreen<Modrinth.Project> {
 			picked, done, needsMods, toggle);
 	}
 
+	/** Back on the TweakSwitch screen, show the tab the new packs landed on. */
+	@Override
+	protected void afterDownload(final List<Modrinth.Project> succeeded) {
+		if (!succeeded.isEmpty()) {
+			Settings settings = Settings.get();
+			settings.tab = TweakSwitchScreen.Tab.MODRINTH.name();
+			settings.save();
+		}
+	}
+
 	@Override
 	protected String id(final Modrinth.Project project) {
 		return project.id();

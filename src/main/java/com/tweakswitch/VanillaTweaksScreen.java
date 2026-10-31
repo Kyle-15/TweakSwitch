@@ -152,6 +152,16 @@ public class VanillaTweaksScreen extends DownloadScreen<VanillaTweaks.VtPack> {
 		}, picked, done, toggle);
 	}
 
+	/** Back on the TweakSwitch screen, show the tab the new packs landed on. */
+	@Override
+	protected void afterDownload(final List<VanillaTweaks.VtPack> succeeded) {
+		if (!succeeded.isEmpty()) {
+			Settings settings = Settings.get();
+			settings.tab = TweakSwitchScreen.Tab.VANILLA_TWEAKS.name();
+			settings.save();
+		}
+	}
+
 	@Override
 	protected String id(final VanillaTweaks.VtPack pack) {
 		return pack.id();

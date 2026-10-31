@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.security.MessageDigest;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.HashSet;
@@ -58,6 +59,35 @@ public class TweakSwitchScreen extends PackListScreen {
 	/** Categories the player collapsed; kept for the session. */
 	private static final Set<String> COLLAPSED = new HashSet<>();
 
+	/** Packs you added yourself and packs the mod downloaded each get their own tab, so it's clear where each came from. */
+	public enum Tab {
+		/** Dropped onto the screen or put in the folder by hand. */
+		IMPORTED("tweakswitch.tab.imported", "tweakswitch.empty.imported"),
+		VANILLA_TWEAKS("tweakswitch.tab.vanillaTweaks", "tweakswitch.empty.vanillaTweaks"),
+		MODRINTH("tweakswitch.tab.modrinth", "tweakswitch.empty.modrinth");
+
+		final String key;
+		final String emptyKey;
+
+		Tab(final String key, final String emptyKey) {
+			this.key = key;
+			this.emptyKey = emptyKey;
+		}
+
+		static Tab fromSettings() {
+			try {
+				return valueOf(Settings.get().tab);
+			} catch (IllegalArgumentException e) {
+				return IMPORTED;
+			}
+		}
+
+		/** The tab that's showing, for the screenshot test. */
+		public static Tab fromSettingsForTest() {
+			return fromSettings();
+		}
+	}
+
 	/** The ways the switches can be grouped; the "Group" button beside the search box cycles through them. */
 	public enum GroupBy {
 		/** Vanilla Tweaks category, "Modrinth", or "Other Packs". */
@@ -76,11 +106,20 @@ public class TweakSwitchScreen extends PackListScreen {
 		}
 
 		static GroupBy fromSettings() {
+			GroupBy chosen;
 			try {
-				return valueOf(Settings.get().groupBy);
+				chosen = valueOf(Settings.get().groupBy);
 			} catch (IllegalArgumentException e) {
-				return SOURCE;
+				chosen = SOURCE;
 			}
+			// "Category" means Vanilla Tweaks' categories, so the other tabs use "Changes" instead
+			return chosen == SOURCE && Tab.fromSettings() != Tab.VANILLA_TWEAKS ? CHANGES : chosen;
+		}
+
+		/** The next mode for the Group button, skipping "Category" outside the Vanilla Tweaks tab. */
+		GroupBy next() {
+			GroupBy next = values()[(this.ordinal() + 1) % values().length];
+			return next == SOURCE && Tab.fromSettings() != Tab.VANILLA_TWEAKS ? next.next() : next;
 		}
 	}
 
@@ -90,6 +129,8 @@ public class TweakSwitchScreen extends PackListScreen {
 	private static final String SUBGROUP = " · ";
 	/** Icon hashes used by {@link #SHARED_ICON_THRESHOLD} or more packs, worked out when the list is built. */
 	private Set<String> sharedIconHashes = Set.of();
+	/** How many packs are on each tab, for the tab labels. */
+	private Map<Tab, Integer> tabCounts = Map.of();
 	/** Which pack each switch row shows, for the Shift preview. */
 	private final Map<AbstractWidget, Pack> switchRows = new HashMap<>();
 	/** Switch state the player has chosen but not yet applied, by pack id. */
@@ -126,9 +167,8 @@ public class TweakSwitchScreen extends PackListScreen {
 	@Override
 	protected List<AbstractWidget> createHeaderExtras() {
 		ThemedButton group = new ThemedButton(this.theme(), ThemedButton.Kind.SECONDARY, Component.empty(), 104, button -> {
-			GroupBy[] all = GroupBy.values();
 			Settings settings = Settings.get();
-			settings.groupBy = all[(GroupBy.fromSettings().ordinal() + 1) % all.length].name();
+			settings.groupBy = GroupBy.fromSettings().next().name();
 			settings.save();
 			this.refreshList();
 		}) {
@@ -140,12 +180,48 @@ public class TweakSwitchScreen extends PackListScreen {
 		return List.of(group);
 	}
 
+	/** "Imported (62)", "Vanilla Tweaks (2)", "Modrinth (3)": the selected one is highlighted. */
+	@Override
+	protected List<AbstractWidget> createTabs() {
+		List<AbstractWidget> tabs = new ArrayList<>();
+		for (Tab tab : Tab.values()) {
+			ThemedButton button = new ThemedButton(this.theme(), ThemedButton.Kind.SECONDARY, Component.empty(), 100, b -> {
+				Settings settings = Settings.get();
+				settings.tab = tab.name();
+				settings.save();
+				this.refreshList();
+				if (this.list != null) {
+					this.list.setScrollAmount(0.0);
+				}
+			}) {
+				@Override
+				public Component getMessage() {
+					return Component.translatable(tab.key).append(" (" + TweakSwitchScreen.this.tabCounts.getOrDefault(tab, 0) + ")");
+				}
+			};
+			tabs.add(button.highlightWhen(() -> Tab.fromSettings() == tab));
+		}
+		return tabs;
+	}
+
+	/** Which tab a pack belongs on: where downloads.json says it came from, or Imported if it isn't in there. */
+	private Tab tabOf(final Pack pack) {
+		PackIndex.Entry entry = this.index.get(TweakSwitchPackSource.fileName(pack));
+		if (entry != null && PackIndex.VANILLA_TWEAKS.equals(entry.source())) {
+			return Tab.VANILLA_TWEAKS;
+		}
+		if (entry != null && PackIndex.MODRINTH.equals(entry.source())) {
+			return Tab.MODRINTH;
+		}
+		return Tab.IMPORTED;
+	}
+
 	@Override
 	protected void addFooter() {
 		this.addFooterButtons(
-			this.button(Component.translatable("tweakswitch.getVanillaTweaks"), 90, button -> this.minecraft.gui.setScreen(new VanillaTweaksScreen(this)))
+			this.button(Component.translatable("tweakswitch.getVanillaTweaks"), 100, button -> this.minecraft.gui.setScreen(new VanillaTweaksScreen(this)))
 				.withTooltip(Component.translatable("tweakswitch.getVanillaTweaks.tooltip")),
-			this.button(Component.translatable("tweakswitch.getModrinth"), 70, button -> this.minecraft.gui.setScreen(new ModrinthScreen(this)))
+			this.button(Component.translatable("tweakswitch.getModrinth"), 80, button -> this.minecraft.gui.setScreen(new ModrinthScreen(this)))
 				.withTooltip(Component.translatable("tweakswitch.getModrinth.tooltip")),
 			this.button(Component.translatable("tweakswitch.getUpdates"), 70, button -> this.minecraft.gui.setScreen(new UpdatesScreen(this)))
 				.withTooltip(Component.translatable("tweakswitch.getUpdates.tooltip")),
@@ -158,7 +234,13 @@ public class TweakSwitchScreen extends PackListScreen {
 	@Override
 	protected void fillList(final PackList list) {
 		this.switchRows.clear();
-		List<Pack> ours = this.ourPacks().stream()
+		this.index = PackIndex.load();
+		Tab tab = Tab.fromSettings();
+		List<Pack> all = this.ourPacks();
+		this.tabCounts = all.stream().collect(Collectors.groupingBy(this::tabOf, () -> new EnumMap<>(Tab.class), Collectors.counting()))
+			.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().intValue()));
+		List<Pack> ours = all.stream()
+			.filter(pack -> this.tabOf(pack) == tab)
 			.sorted(Comparator.comparing(pack -> pack.getTitle().getString().toLowerCase(Locale.ROOT)))
 			.toList();
 		// Search also looks at the file name and what's inside, so "flame" finds a pack that changes the flame particle
@@ -169,11 +251,10 @@ public class TweakSwitchScreen extends PackListScreen {
 		}).toList();
 
 		if (shown.isEmpty()) {
-			list.addText(Component.translatable(ours.isEmpty() ? "tweakswitch.empty" : "tweakswitch.noMatches").withStyle(ChatFormatting.GRAY));
+			list.addText(Component.translatable(ours.isEmpty() ? tab.emptyKey : "tweakswitch.noMatches").withStyle(ChatFormatting.GRAY));
 			return;
 		}
 
-		this.index = PackIndex.load();
 		ours.forEach(TweakSwitchScreen::packIcon);
 		Map<String, Long> iconUses = ours.stream().map(pack -> PACK_ICON_HASHES.get(pack.getId())).filter(java.util.Objects::nonNull)
 			.collect(Collectors.groupingBy(hash -> hash, Collectors.counting()));
@@ -363,6 +444,10 @@ public class TweakSwitchScreen extends PackListScreen {
 			if (confirmed) {
 				this.importPacks(files);
 				this.repository.reload();
+				// Dropped packs are imported ones, so show that tab
+				Settings settings = Settings.get();
+				settings.tab = Tab.IMPORTED.name();
+				settings.save();
 			}
 
 			this.minecraft.gui.setScreen(this);

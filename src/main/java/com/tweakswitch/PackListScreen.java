@@ -35,8 +35,9 @@ import org.jspecify.annotations.Nullable;
 public abstract class PackListScreen extends Screen {
 	/** The preview panel's width in GUI pixels; pictures are decoded to fit it sharply. */
 	public static final int PREVIEW_WIDTH = 160;
-	/** Compact: title, search box and any extra buttons share one row. */
+	/** Compact: title, search box and any extra buttons share one row; tabs, if any, go in a second row under it. */
 	private static final int HEADER_HEIGHT = 28;
+	private static final int HEADER_WITH_TABS_HEIGHT = 48;
 	private static final int FOOTER_HEIGHT = 26;
 	private static final int SEARCH_WIDTH = 200;
 	private static final int MIN_SEARCH_WIDTH = 60;
@@ -103,11 +104,13 @@ public abstract class PackListScreen extends Screen {
 
 	@Override
 	protected void init() {
-		this.layout.setHeaderHeight(HEADER_HEIGHT);
+		List<AbstractWidget> tabs = this.createTabs();
+		this.layout.setHeaderHeight(tabs.isEmpty() ? HEADER_HEIGHT : HEADER_WITH_TABS_HEIGHT);
 		this.layout.setFooterHeight(FOOTER_HEIGHT);
 		if (this.hasSearch()) {
+			LinearLayout column = this.layout.addToHeader(LinearLayout.vertical().spacing(4));
 			// Centered, with right padding reserved for the "⇧ Preview" hint (sized in repositionElements) so it's centered too
-			LinearLayout header = this.layout.addToHeader(LinearLayout.horizontal().spacing(HEADER_GAP), settings -> {
+			LinearLayout header = column.addChild(LinearLayout.horizontal().spacing(HEADER_GAP), settings -> {
 				settings.alignHorizontallyCenter();
 				this.headerSettings = settings;
 			});
@@ -130,6 +133,10 @@ public abstract class PackListScreen extends Screen {
 			for (AbstractWidget extra : this.createHeaderExtras()) {
 				this.headerExtras.add(header.addChild(extra));
 			}
+			if (!tabs.isEmpty()) {
+				LinearLayout tabRow = column.addChild(LinearLayout.horizontal().spacing(4), LayoutSettings::alignHorizontallyCenter);
+				tabs.forEach(tabRow::addChild);
+			}
 		} else {
 			this.layout.addTitleHeader(this.styledTitle(), this.font);
 		}
@@ -137,6 +144,11 @@ public abstract class PackListScreen extends Screen {
 		this.addFooter();
 		this.layout.visitWidgets(this::addRenderableWidget);
 		this.repositionElements();
+	}
+
+	/** Tabs in a row under the search box, like the TweakSwitch screen's Imported / Vanilla Tweaks / Modrinth. */
+	protected List<AbstractWidget> createTabs() {
+		return List.of();
 	}
 
 	/** Buttons beside the search box, like the TweakSwitch screen's "Group by". */
@@ -287,7 +299,7 @@ public abstract class PackListScreen extends Screen {
 			rowRight = Math.max(rowRight, extra.getRight());
 		}
 		int x = Math.min(rowRight + HEADER_GAP + 4, this.width - this.font.width(PREVIEW_HINT) - 8);
-		int y = (this.layout.getHeaderHeight() - 8) / 2;
+		int y = this.search != null ? this.search.getY() + (this.search.getHeight() - 8) / 2 : (this.layout.getHeaderHeight() - 8) / 2;
 		if (on) {
 			Draw.roundRect(graphics, x - 4, y - 3, this.font.width(PREVIEW_HINT) + 8, 14, 7, this.theme().accent());
 		}
