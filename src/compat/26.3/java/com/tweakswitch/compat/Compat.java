@@ -2,12 +2,19 @@ package com.tweakswitch.compat;
 
 import com.mojang.blaze3d.Blaze3D;
 import com.mojang.renderpearl.api.textures.FilterMode;
-import com.mojang.renderpearl.api.textures.GpuSampler;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.platform.NativeImage;
 import java.io.InputStream;
+import java.util.function.Supplier;
+import net.minecraft.client.renderer.texture.DynamicTexture;
+import java.util.List;
 import java.nio.file.Path;
+import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
+import net.fabricmc.fabric.api.client.screen.v1.Screens;
+import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.toasts.ToastManager;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.server.packs.repository.Pack;
@@ -49,9 +56,13 @@ public final class Compat {
 		return InputConstants.Type.KEYBOARD;
 	}
 
-	/** A texture sampler that scales smoothly, for photo-like previews. */
-	public static GpuSampler smoothSampler() {
-		return RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR);
+	/** A texture that scales smoothly when drawn bigger or smaller, for photo-like previews. */
+	public static DynamicTexture smoothTexture(final Supplier<String> label, final NativeImage image) {
+		return new DynamicTexture(label, image) {
+			{
+				this.sampler = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR);
+			}
+		};
 	}
 
 	/** A file at the root of a pack (like pack.png), or null if it has none. */
@@ -65,5 +76,20 @@ public final class Compat {
 				return stream.readAllBytes();
 			}
 		}
+	}
+
+	/** Registers a keybind with Fabric API so it shows in Controls. */
+	public static KeyMapping registerKey(final KeyMapping mapping) {
+		return KeyMappingHelper.registerKeyMapping(mapping);
+	}
+
+	/** A screen's widget list, to add a button to a vanilla screen after it opens. */
+	public static List<AbstractWidget> screenWidgets(final Screen screen) {
+		return Screens.getWidgets(screen);
+	}
+
+	/** Re-lays out the screen after the GUI scale or window size changes. */
+	public static void resizeGui(final Minecraft minecraft) {
+		minecraft.resizeGui();
 	}
 }

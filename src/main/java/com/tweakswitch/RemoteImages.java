@@ -22,7 +22,6 @@ import javax.imageio.ImageReader;
 import javax.imageio.metadata.IIOMetadata;
 import javax.imageio.stream.ImageInputStream;
 import net.minecraft.client.Minecraft;
-import java.util.function.Supplier;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.resources.Identifier;
 import org.jspecify.annotations.Nullable;
@@ -69,14 +68,6 @@ public final class RemoteImages {
 	private static volatile @Nullable String wanted;
 
 	public record Frame(Identifier texture, int delayMs) {
-	}
-
-	/** Previews are photos and screenshots, so they're scaled smoothly instead of Minecraft's blocky "nearest pixel". */
-	private static final class SmoothTexture extends DynamicTexture {
-		SmoothTexture(final Supplier<String> label, final NativeImage image) {
-			super(label, image);
-			this.sampler = Compat.smoothSampler();
-		}
 	}
 
 	/** A loaded image: one frame for stills, several for animations. */
@@ -174,7 +165,8 @@ public final class RemoteImages {
 		for (RawFrame frame : raw) {
 			Identifier id = Identifier.fromNamespaceAndPath(TweakSwitch.MOD_ID, "remote_image/" + NEXT_ID.incrementAndGet());
 			Minecraft.getInstance().getTextureManager().register(id,
-				smooth ? new SmoothTexture(id::toString, frame.image()) : new DynamicTexture(id::toString, frame.image()));
+				// Previews are photos and screenshots, so they're scaled smoothly instead of Minecraft's blocky "nearest pixel"
+				smooth ? Compat.smoothTexture(id::toString, frame.image()) : new DynamicTexture(id::toString, frame.image()));
 			frames.add(new Frame(id, frame.delayMs()));
 			duration += frame.delayMs();
 		}

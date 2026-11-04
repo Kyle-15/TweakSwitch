@@ -2,6 +2,7 @@ package com.tweakswitch;
 
 import com.mojang.logging.LogUtils;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Optional;
@@ -16,7 +17,6 @@ import net.minecraft.server.packs.repository.FolderRepositorySource;
 import net.minecraft.server.packs.repository.Pack;
 import net.minecraft.server.packs.repository.PackSource;
 import net.minecraft.server.packs.repository.RepositorySource;
-import net.minecraft.util.FileUtil;
 import org.slf4j.Logger;
 
 /**
@@ -61,7 +61,7 @@ public class TweakSwitchPackSource implements RepositorySource {
 	public void loadPacks(final Consumer<Pack> result) {
 		Path folder = TweakSwitch.packsDir();
 		try {
-			FileUtil.createDirectoriesSafe(folder);
+			Files.createDirectories(folder);
 			Map<String, PackIndex.Entry> index = PackIndex.load();
 			FolderRepositorySource.discoverPacks(folder, Minecraft.getInstance().directoryValidator(), (content, resources) -> {
 				String fileName = content.getFileName().toString();

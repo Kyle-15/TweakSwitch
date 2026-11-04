@@ -12,7 +12,6 @@ import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.FormattedCharSequence;
-import net.minecraft.util.Util;
 import com.tweakswitch.ui.SectionHeader;
 import com.tweakswitch.ui.Theme;
 import com.tweakswitch.ui.ThemedButton;
@@ -266,7 +265,7 @@ public abstract class PackListScreen extends BridgeScreen {
 		this.drawPreviewHint(graphics);
 		AbstractWidget hovered = this.hoveredListWidget(mouseX, mouseY);
 		Preview preview = hovered != null && this.hasPreviews() && previewsOn() ? this.previewFor(hovered) : null;
-		long now = Util.getMillis();
+		long now = System.currentTimeMillis();
 		Object key = preview != null ? preview.key() : null;
 		if (!java.util.Objects.equals(key, this.previewKey)) {
 			this.previewKey = key;

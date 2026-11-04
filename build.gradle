@@ -46,6 +46,8 @@ dependencies {
 	}
 	add(mod("implementation"), "net.fabricmc:fabric-loader:${project.loader_version}")
 	add(mod("implementation"), "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}")
+	// @Nullable annotations; newer Minecraft ships them, older 1.21 versions don't. Only needed to compile.
+	compileOnly "org.jspecify:jspecify:1.0.0"
 
 	// WebP decoding for Modrinth images (Java can't read WebP on its own), bundled inside the mod jar
 	for (String lib : [
@@ -66,8 +68,23 @@ dependencies {
 	add(mod("gametestCompileOnly"), "com.terraformersmc:modmenu:${project.modmenu_version}")
 }
 
-sourceSets.main.java.srcDir("src/compat/${project.compat}/java")
-sourceSets.main.java.srcDir("src/render/${project.render}/java")
+if (project.findProperty("identifier_name") == "old") {
+	// Before 1.21.11, Mojang's names call Identifier "ResourceLocation" (the same class in the game). Compile a copy of the
+	// sources with the old name, so the shared code doesn't need two spellings.
+	def oldNames = layout.buildDirectory.dir("generated/old-names")
+	def oldNameSources = tasks.register("oldNameSources", Sync) {
+		from("src/main/java")
+		from("src/compat/${project.compat}/java")
+		from("src/render/${project.render}/java")
+		into(oldNames)
+		filter { String line -> line.replaceAll(/\bIdentifier\b/, "ResourceLocation") }
+	}
+	sourceSets.main.java.srcDirs = [oldNames]
+	tasks.named("compileJava") { dependsOn(oldNameSources) }
+} else {
+	sourceSets.main.java.srcDir("src/compat/${project.compat}/java")
+	sourceSets.main.java.srcDir("src/render/${project.render}/java")
+}
 
 processResources {
 	def version = project.version
@@ -85,6 +102,7 @@ processResources {
 def javaVersion = Integer.parseInt(project.java_version)
 tasks.withType(JavaCompile).configureEach {
 	it.options.release = javaVersion
+	it.options.compilerArgs += ["-Xmaxerrs", "1000"]
 }
 
 java {

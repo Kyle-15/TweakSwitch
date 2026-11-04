@@ -5,9 +5,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import java.nio.file.Path;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
-import net.fabricmc.fabric.api.client.screen.v1.Screens;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.gui.components.Button;
@@ -28,7 +26,7 @@ public class TweakSwitch implements ClientModInitializer {
 
 	@Override
 	public void onInitializeClient() {
-		openKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.tweakswitch.open", Compat.keyboard(), InputConstants.KEY_K, CATEGORY));
+		openKey = Compat.registerKey(new KeyMapping("key.tweakswitch.open", Compat.keyboard(), InputConstants.KEY_K, CATEGORY));
 
 		ClientTickEvents.END_CLIENT_TICK.register(minecraft -> {
 			while (openKey.consumeClick()) {
@@ -41,7 +39,7 @@ public class TweakSwitch implements ClientModInitializer {
 		// Shortcut from the vanilla Resource Packs screen
 		ScreenEvents.AFTER_INIT.register((minecraft, screen, width, height) -> {
 			if (screen instanceof PackSelectionScreen) {
-				Screens.getWidgets(screen).add(Button.builder(Component.translatable("tweakswitch.title"), button -> {
+				Compat.screenWidgets(screen).add(Button.builder(Component.translatable("tweakswitch.title"), button -> {
 					screen.onClose();
 					Compat.setScreen(minecraft, new TweakSwitchScreen(Compat.screen(minecraft)));
 				}).bounds(6, 6, 80, 20).build());

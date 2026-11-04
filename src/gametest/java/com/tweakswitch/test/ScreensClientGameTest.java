@@ -80,7 +80,7 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		context.getInput().resizeWindow(1600, 600);
 		context.runOnClient(minecraft -> {
 			minecraft.options.guiScale().set(2);
-			minecraft.resizeGui();
+			Compat.resizeGui(minecraft);
 		});
 		context.waitTicks(5);
 		context.takeScreenshot("tweakswitch-wide-header");
@@ -94,7 +94,7 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		context.getInput().resizeWindow(854, 480);
 		context.runOnClient(minecraft -> {
 			minecraft.options.guiScale().set(0);
-			minecraft.resizeGui();
+			Compat.resizeGui(minecraft);
 		});
 		context.waitTicks(3);
 
@@ -103,7 +103,7 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		context.getInput().resizeWindow(640, 480);
 		context.runOnClient(minecraft -> {
 			minecraft.options.guiScale().set(2);
-			minecraft.resizeGui();
+			Compat.resizeGui(minecraft);
 		});
 		context.waitTicks(5);
 		context.takeScreenshot("tweakswitch-small-switches");
@@ -125,7 +125,7 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		context.getInput().resizeWindow(854, 480);
 		context.runOnClient(minecraft -> {
 			minecraft.options.guiScale().set(0);
-			minecraft.resizeGui();
+			Compat.resizeGui(minecraft);
 		});
 		context.setScreen(() -> new TweakSwitchScreen(null));
 		context.waitTicks(5);
@@ -229,19 +229,28 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		// Fresh Animations is deleted first so Extensions has to bring it back.
 		Path packs = TweakSwitch.packsDir();
 		deleteQuietly(packs.resolve("MR - Fresh Animations.zip"));
-		pickModrinthResult(context, "Hyper Punchy");
+		// Hyper Punchy (needs a mod) only exists for some game versions, e.g. not 1.21.9 or 1.21.10
+		boolean modNeeded = !versions("hyper-punchy").isEmpty();
+		if (modNeeded) {
+			pickModrinthResult(context, "Hyper Punchy");
+		}
 		pickModrinthResult(context, "Fresh Animations: Extensions");
 		context.runOnClient(minecraft -> ((Button) field(DownloadScreen.class, Compat.screen(minecraft), "downloadButton")).onPress(null));
-		context.waitForScreen(ModsNeededScreen.class);
-		context.waitTicks(5);
-		context.runOnClient(minecraft -> Compat.toasts(minecraft).clear());
-		context.waitTicks(2);
-		context.takeScreenshot("tweakswitch-mods-needed");
-		context.clickScreenButton("tweakswitch.mods.downloadAnyway");
-		context.waitForScreen(ModrinthScreen.class);
+		if (modNeeded) {
+			context.waitForScreen(ModsNeededScreen.class);
+			context.waitTicks(5);
+			context.runOnClient(minecraft -> Compat.toasts(minecraft).clear());
+			context.waitTicks(2);
+			context.takeScreenshot("tweakswitch-mods-needed");
+			context.clickScreenButton("tweakswitch.mods.downloadAnyway");
+			context.waitForScreen(ModrinthScreen.class);
+		}
 		context.waitFor(minecraft -> field(DownloadScreen.class, null, "progress") == null, 1200);
 		// Fresh Animations comes along only if this game version's Extensions declares it as required (26.3's does, 26.2's doesn't)
-		List<String> expected = new java.util.ArrayList<>(List.of("MR - Hyper Punchy.zip", "MR - Fresh Animations_ Extensions.zip"));
+		List<String> expected = new java.util.ArrayList<>(List.of("MR - Fresh Animations_ Extensions.zip"));
+		if (modNeeded) {
+			expected.add("MR - Hyper Punchy.zip");
+		}
 		if (requires("fresh-animations-extensions", "50dA9Sha")) {
 			expected.add("MR - Fresh Animations.zip");
 		}
@@ -390,7 +399,13 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		context.waitForScreen(TweakSwitchScreen.class);
 
 		// Switch one on and apply it: the pack should be selected and resources reloaded
-		String packId = "tweakswitch/VT - Cherry Picking.zip";
+		// Whichever Vanilla Tweaks pack was downloaded: their categories list different packs on different game versions
+		String packId;
+		try (java.util.stream.Stream<Path> files = Files.list(TweakSwitch.packsDir())) {
+			packId = "tweakswitch/" + files.map(file -> file.getFileName().toString()).filter(name -> name.startsWith("VT - ")).sorted().findFirst().orElseThrow();
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
 		context.runOnClient(minecraft -> {
 			Map<String, Boolean> pending = (Map<String, Boolean>) field(TweakSwitchScreen.class, Compat.screen(minecraft), "pending");
 			pending.put(packId, true);
