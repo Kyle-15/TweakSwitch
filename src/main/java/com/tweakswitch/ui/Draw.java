@@ -1,7 +1,7 @@
 package com.tweakswitch.ui;
 
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import com.tweakswitch.render.Gfx;
 
 /** Small drawing helpers the vanilla GUI doesn't have: rounded rectangles, pills, circles and cut-off text. */
 public final class Draw {
@@ -9,7 +9,7 @@ public final class Draw {
 	}
 
 	/** A filled rectangle with corners rounded to {@code radius} pixels, drawn as one strip per row of the curve. */
-	public static void roundRect(final GuiGraphicsExtractor graphics, final int x, final int y, final int width, final int height, final int radius, final int color) {
+	public static void roundRect(final Gfx graphics, final int x, final int y, final int width, final int height, final int radius, final int color) {
 		int r = Math.max(0, Math.min(radius, Math.min(width, height) / 2));
 		for (int i = 0; i < r; i++) {
 			double dy = r - i - 0.5;
@@ -22,13 +22,13 @@ public final class Draw {
 
 	/** A rounded rectangle with a one-pixel border. */
 	public static void roundRectOutlined(
-		final GuiGraphicsExtractor graphics, final int x, final int y, final int width, final int height, final int radius, final int fill, final int border
+		final Gfx graphics, final int x, final int y, final int width, final int height, final int radius, final int fill, final int border
 	) {
 		roundRect(graphics, x, y, width, height, radius, border);
 		roundRect(graphics, x + 1, y + 1, width - 2, height - 2, Math.max(0, radius - 1), fill);
 	}
 
-	public static void circle(final GuiGraphicsExtractor graphics, final int x, final int y, final int size, final int color) {
+	public static void circle(final Gfx graphics, final int x, final int y, final int size, final int color) {
 		roundRect(graphics, x, y, size, size, size / 2, color);
 	}
 

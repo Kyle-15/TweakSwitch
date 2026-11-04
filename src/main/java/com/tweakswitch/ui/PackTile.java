@@ -3,7 +3,7 @@ package com.tweakswitch.ui;
 import java.util.List;
 import java.util.function.BooleanSupplier;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import com.tweakswitch.render.Gfx;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.FormattedCharSequence;
@@ -34,7 +34,7 @@ public class PackTile extends CardButton {
 	}
 
 	@Override
-	protected void draw(final GuiGraphicsExtractor graphics, final Font font, final boolean hovered) {
+	protected void draw(final Gfx graphics, final Font font, final boolean hovered) {
 		int x = this.getX();
 		int y = this.getY();
 		boolean isPicked = this.picked.getAsBoolean();

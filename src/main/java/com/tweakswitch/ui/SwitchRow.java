@@ -3,11 +3,10 @@ package com.tweakswitch.ui;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import com.tweakswitch.render.Gfx;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
-import net.minecraft.client.renderer.RenderPipelines;
 
 /** One pack on the TweakSwitch screen: its icon, name and description, and an on/off switch drawn like the mod's icon. */
 public class SwitchRow extends CardButton {
@@ -41,7 +40,7 @@ public class SwitchRow extends CardButton {
 	}
 
 	@Override
-	protected void draw(final GuiGraphicsExtractor graphics, final Font font, final boolean hovered) {
+	protected void draw(final Gfx graphics, final Font font, final boolean hovered) {
 		int x = this.getX();
 		int y = this.getY();
 		boolean isOn = this.on.getAsBoolean();
@@ -49,7 +48,7 @@ public class SwitchRow extends CardButton {
 			hovered ? this.theme.cardHover() : this.theme.card(), isOn ? this.theme.accent() : this.theme.border());
 
 		int iconY = y + (this.getHeight() - ICON_SIZE) / 2;
-		graphics.blit(RenderPipelines.GUI_TEXTURED, this.icon.get(), x + 3, iconY, 0.0F, 0.0F, ICON_SIZE, ICON_SIZE, ICON_SIZE, ICON_SIZE);
+		graphics.texture(this.icon.get(), x + 3, iconY, ICON_SIZE, ICON_SIZE);
 
 		int switchX = x + this.getWidth() - SWITCH_WIDTH - 5;
 		int textX = x + ICON_SIZE + 8;

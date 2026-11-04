@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import com.tweakswitch.render.Gfx;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import org.jspecify.annotations.Nullable;
@@ -43,7 +43,7 @@ public class ProjectCard extends CardButton {
 
 	/** Two lines: "Title by author" with the download count (or a badge) on the right, then the summary with tags. */
 	@Override
-	protected void draw(final GuiGraphicsExtractor graphics, final Font font, final boolean hovered) {
+	protected void draw(final Gfx graphics, final Font font, final boolean hovered) {
 		int x = this.getX();
 		int y = this.getY();
 		int width = this.getWidth();

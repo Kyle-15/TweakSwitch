@@ -3,8 +3,8 @@ package com.tweakswitch.ui;
 import com.tweakswitch.PackListScreen;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.client.gui.components.AbstractButton;
+import com.tweakswitch.render.BridgeButton;
+import com.tweakswitch.render.Gfx;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.input.InputWithModifiers;
@@ -12,7 +12,7 @@ import net.minecraft.network.chat.Component;
 import org.jspecify.annotations.Nullable;
 
 /** A clickable area that draws itself however its subclass likes: a switch card, a tile, a header. */
-public abstract class CardButton extends AbstractButton {
+public abstract class CardButton extends BridgeButton {
 	protected final Theme theme;
 	private final Runnable action;
 
@@ -41,10 +41,10 @@ public abstract class CardButton extends AbstractButton {
 	}
 
 	@Override
-	protected final void extractContents(final GuiGraphicsExtractor graphics, final int mouseX, final int mouseY, final float a) {
+	protected final void drawContents(final Gfx graphics, final int mouseX, final int mouseY, final float a) {
 		this.setTooltip(PackListScreen.previewsOn() ? null : this.plainTooltip);
 		this.draw(graphics, Minecraft.getInstance().font, this.isHoveredOrFocused() && this.active);
 	}
 
-	protected abstract void draw(GuiGraphicsExtractor graphics, Font font, boolean hovered);
+	protected abstract void draw(Gfx graphics, Font font, boolean hovered);
 }

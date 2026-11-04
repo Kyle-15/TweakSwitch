@@ -10,14 +10,14 @@ import com.tweakswitch.ui.Draw;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
-import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.util.Util;
 import com.tweakswitch.ui.SectionHeader;
 import com.tweakswitch.ui.Theme;
 import com.tweakswitch.ui.ThemedButton;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import com.tweakswitch.render.BridgeScreen;
+import com.tweakswitch.render.Gfx;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
@@ -33,7 +33,7 @@ import org.jspecify.annotations.Nullable;
  * Shared layout for the TweakSwitch screens: title and search box on top, a {@link PackList} in the middle, buttons at the
  * bottom. Everything shrinks to fit narrow windows.
  */
-public abstract class PackListScreen extends Screen {
+public abstract class PackListScreen extends BridgeScreen {
 	/** The preview panel's width in GUI pixels; pictures are decoded to fit it sharply. */
 	public static final int PREVIEW_WIDTH = 160;
 	/** Compact: title, search box and any extra buttons share one row; tabs, if any, go in a second row under it. */
@@ -201,7 +201,7 @@ public abstract class PackListScreen extends Screen {
 
 	/** The theme's background, darker bars behind the header and footer, and a rounded box behind the search text. */
 	@Override
-	public void extractBackground(final GuiGraphicsExtractor graphics, final int mouseX, final int mouseY, final float a) {
+	protected void drawBackground(final Gfx graphics, final int mouseX, final int mouseY, final float a) {
 		Theme theme = this.theme();
 		graphics.fill(0, 0, this.width, this.height, theme.background());
 		graphics.fill(0, 0, this.width, this.layout.getHeaderHeight(), theme.bar());
@@ -262,9 +262,8 @@ public abstract class PackListScreen extends Screen {
 	}
 
 	@Override
-	public void extractRenderState(final GuiGraphicsExtractor graphics, final int mouseX, final int mouseY, final float a) {
-		super.extractRenderState(graphics, mouseX, mouseY, a);
-		this.extractPreviewHint(graphics);
+	protected void drawOverlay(final Gfx graphics, final int mouseX, final int mouseY, final float a) {
+		this.drawPreviewHint(graphics);
 		AbstractWidget hovered = this.hoveredListWidget(mouseX, mouseY);
 		Preview preview = hovered != null && this.hasPreviews() && previewsOn() ? this.previewFor(hovered) : null;
 		long now = Util.getMillis();
@@ -281,7 +280,7 @@ public abstract class PackListScreen extends Screen {
 		RemoteImages.Image image = this.currentImage(preview.imageUrls(), now);
 		// Like a tooltip, wait a moment so the panel doesn't flash up while the mouse just passes over the list
 		if (now - this.hoverStart >= HOVER_DELAY_MS) {
-			this.extractPreviewPanel(graphics, preview, image, now, mouseX, mouseY);
+			this.drawPreviewPanel(graphics, preview, image, now, mouseX, mouseY);
 		}
 	}
 
@@ -289,7 +288,7 @@ public abstract class PackListScreen extends Screen {
 	 * "⇧ Preview" in the header's right corner, lit in the accent color while previews are on, so the Shift toggle can be
 	 * found. Left out when the window is too narrow for it.
 	 */
-	private void extractPreviewHint(final GuiGraphicsExtractor graphics) {
+	private void drawPreviewHint(final Gfx graphics) {
 		if (!this.hasPreviews() || !this.hintFits) {
 			return;
 		}
@@ -341,8 +340,8 @@ public abstract class PackListScreen extends Screen {
 	}
 
 	/** A tooltip-like panel on the half of the screen away from the cursor, so the hovered item stays visible. */
-	private void extractPreviewPanel(
-		final GuiGraphicsExtractor graphics, final Preview preview, final RemoteImages.Image image, final long now, final int mouseX, final int mouseY
+	private void drawPreviewPanel(
+		final Gfx graphics, final Preview preview, final RemoteImages.Image image, final long now, final int mouseX, final int mouseY
 	) {
 		Theme theme = this.theme();
 		int panelWidth = Math.min(PREVIEW_WIDTH, this.width / 2 - 2 * PANEL_PADDING - 8);
@@ -386,7 +385,7 @@ public abstract class PackListScreen extends Screen {
 				int cellY = contentY + (i / TEXTURE_COLUMNS) * (cell + 2);
 				graphics.fill(cellX, cellY, cellX + cell, cellY + cell, theme.card());
 				// Pack textures are pixel art: drawn crisp, filling the cell
-				graphics.blit(RenderPipelines.GUI_TEXTURED, textures.get(i), cellX, cellY, 0.0F, 0.0F, cell, cell, cell, cell);
+				graphics.texture(textures.get(i), cellX, cellY, cell, cell);
 			}
 			contentY += imageHeight + PANEL_PADDING;
 		} else if (texture != null) {

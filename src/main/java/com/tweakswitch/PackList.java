@@ -4,9 +4,9 @@ import java.util.List;
 import com.tweakswitch.ui.Draw;
 import com.tweakswitch.ui.Theme;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import com.tweakswitch.render.Gfx;
 import net.minecraft.client.gui.components.AbstractWidget;
-import net.minecraft.client.gui.components.ContainerObjectSelectionList;
+import com.tweakswitch.render.BridgeList;
 import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.narration.NarratableEntry;
 import net.minecraft.network.chat.Component;
@@ -17,7 +17,7 @@ import org.jspecify.annotations.Nullable;
  * Scrolling list for the TweakSwitch screens. Unlike vanilla's options list, rows shrink to fit narrow windows, text wraps
  * instead of running off the sides, and grids drop to one column when there's no room for two.
  */
-public class PackList extends ContainerObjectSelectionList<PackList.Entry> {
+public class PackList extends BridgeList<PackList.Entry> {
 	private static final int MAX_ROW_WIDTH = 310;
 	private static final int ROW_HEIGHT = 20;
 	private static final int COLUMN_GAP = 10;
@@ -36,19 +36,19 @@ public class PackList extends ContainerObjectSelectionList<PackList.Entry> {
 
 	/** The screen draws the theme's background; the list adds no texture of its own. */
 	@Override
-	protected void extractListBackground(final GuiGraphicsExtractor graphics) {
+	protected void drawListBackground(final Gfx graphics) {
 	}
 
 	@Override
-	protected void extractListSeparators(final GuiGraphicsExtractor graphics) {
+	protected void drawListSeparators(final Gfx graphics) {
 		graphics.fill(this.getX(), this.getY() - 1, this.getRight(), this.getY(), this.theme.border());
 		graphics.fill(this.getX(), this.getBottom(), this.getRight(), this.getBottom() + 1, this.theme.border());
 	}
 
 	/** A thin rounded scrollbar in the theme's colors. */
 	@Override
-	protected void extractScrollbar(final GuiGraphicsExtractor graphics, final int mouseX, final int mouseY) {
-		if (!this.scrollable()) {
+	protected void drawScrollbar(final Gfx graphics, final int mouseX, final int mouseY) {
+		if (!this.canScroll()) {
 			return;
 		}
 		int x = this.scrollBarX() + 2;
@@ -110,7 +110,7 @@ public class PackList extends ContainerObjectSelectionList<PackList.Entry> {
 		return null;
 	}
 
-	public abstract static class Entry extends ContainerObjectSelectionList.Entry<Entry> {
+	public abstract static class Entry extends BridgeList.Entry<Entry> {
 	}
 
 	private static class WidgetRow extends Entry {
@@ -125,14 +125,14 @@ public class PackList extends ContainerObjectSelectionList<PackList.Entry> {
 		}
 
 		@Override
-		public void extractContent(final GuiGraphicsExtractor graphics, final int mouseX, final int mouseY, final boolean hovered, final float a) {
+		public void drawContent(final Gfx graphics, final int mouseX, final int mouseY, final boolean hovered, final float a) {
 			int width = (this.getContentWidth() - this.gap * (this.columns - 1)) / this.columns;
 			for (int i = 0; i < this.widgets.size(); i++) {
 				AbstractWidget widget = this.widgets.get(i);
 				widget.setWidth(width);
 				widget.setX(this.getContentX() + i * (width + this.gap));
 				widget.setY(this.getContentY());
-				widget.extractRenderState(graphics, mouseX, mouseY, a);
+				graphics.widget(widget, mouseX, mouseY, a);
 			}
 		}
 
@@ -157,7 +157,7 @@ public class PackList extends ContainerObjectSelectionList<PackList.Entry> {
 		}
 
 		@Override
-		public void extractContent(final GuiGraphicsExtractor graphics, final int mouseX, final int mouseY, final boolean hovered, final float a) {
+		public void drawContent(final Gfx graphics, final int mouseX, final int mouseY, final boolean hovered, final float a) {
 			int y = this.getContentY() + 4;
 			for (FormattedCharSequence line : this.lines) {
 				graphics.centeredText(Minecraft.getInstance().font, line, this.getContentXMiddle(), y, this.color);

@@ -3,14 +3,14 @@ package com.tweakswitch.ui;
 import java.util.function.BooleanSupplier;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.client.gui.components.Button;
+import com.tweakswitch.render.BridgePlainButton;
+import com.tweakswitch.render.Gfx;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.network.chat.Component;
 import org.jspecify.annotations.Nullable;
 
 /** A flat rounded button in a {@link Theme}'s colors instead of vanilla's stone texture. */
-public class ThemedButton extends Button {
+public class ThemedButton extends BridgePlainButton {
 	public enum Kind {
 		/** Filled with the accent color, for the main action (Download, Done). */
 		PRIMARY,
@@ -25,7 +25,7 @@ public class ThemedButton extends Button {
 	private BooleanSupplier highlighted = () -> false;
 
 	public ThemedButton(final Theme theme, final Kind kind, final Component message, final int width, final OnPress onPress) {
-		super(0, 0, width, HEIGHT, message, onPress, DEFAULT_NARRATION);
+		super(0, 0, width, HEIGHT, message, onPress);
 		this.theme = theme;
 		this.kind = kind;
 	}
@@ -50,7 +50,7 @@ public class ThemedButton extends Button {
 	}
 
 	@Override
-	protected void extractContents(final GuiGraphicsExtractor graphics, final int mouseX, final int mouseY, final float a) {
+	protected void drawContents(final Gfx graphics, final int mouseX, final int mouseY, final float a) {
 		boolean primary = this.kind == Kind.PRIMARY;
 		int fill = primary ? this.theme.accent() : this.theme.card();
 		int textColor = primary ? this.theme.onAccent() : this.theme.text();

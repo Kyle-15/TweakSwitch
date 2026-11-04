@@ -1,9 +1,12 @@
 plugins {
-	id 'net.fabricmc.fabric-loom' version "${loom_version}"
+	// 26.x ships unobfuscated; 1.21.x is obfuscated and needs the remapping flavor of Loom. Only one is applied, below.
+	id 'net.fabricmc.fabric-loom' version "${loom_version}" apply false
+	id 'net.fabricmc.fabric-loom-remap' version "${loom_version}" apply false
 }
 
 // Which Minecraft version to build for: ./gradlew build -Pmc=26.2 (default: the newest). Each version's dependency
-// versions live in versions/<mc>.properties, and the few calls whose names differ between versions in src/compat/<dir>.
+// versions live in versions/<mc>.properties; the calls whose names differ between versions are in src/compat/<compat>,
+// and the drawing layer for that version family in src/render/<render>.
 def mc = providers.gradleProperty("mc").getOrElse("26.3")
 def versionFile = file("versions/${mc}.properties")
 if (!versionFile.exists()) {
@@ -13,6 +16,10 @@ def versionProperties = new Properties()
 versionFile.withInputStream { versionProperties.load(it) }
 versionProperties.each { key, value -> ext.set(key, value) }
 version = "${project.mod_version}+${mc}"
+def obfuscated = mc.startsWith("1.")
+apply plugin: obfuscated ? 'net.fabricmc.fabric-loom-remap' : 'net.fabricmc.fabric-loom'
+// Mods (Fabric API, Mod Menu) go through Loom's remapping configurations on obfuscated versions
+def mod = { String configuration -> obfuscated ? "mod" + configuration.capitalize() : configuration }
 
 fabricApi {
 	// Screenshot tests: ./gradlew runClientGameTest
@@ -34,8 +41,11 @@ repositories {
 
 dependencies {
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
-	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
-	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+	if (obfuscated) {
+		mappings loom.officialMojangMappings()
+	}
+	add(mod("implementation"), "net.fabricmc:fabric-loader:${project.loader_version}")
+	add(mod("implementation"), "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}")
 
 	// WebP decoding for Modrinth images (Java can't read WebP on its own), bundled inside the mod jar
 	for (String lib : [
@@ -51,29 +61,33 @@ dependencies {
 	}
 
 	// Optional: adds a config button in Mod Menu's mod list
-	compileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
-	localRuntime "com.terraformersmc:modmenu:${project.modmenu_version}"
-	gametestCompileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
+	add(mod("compileOnly"), "com.terraformersmc:modmenu:${project.modmenu_version}")
+	add(mod("localRuntime"), "com.terraformersmc:modmenu:${project.modmenu_version}")
+	add(mod("gametestCompileOnly"), "com.terraformersmc:modmenu:${project.modmenu_version}")
 }
 
 sourceSets.main.java.srcDir("src/compat/${project.compat}/java")
+sourceSets.main.java.srcDir("src/render/${project.render}/java")
 
 processResources {
 	def version = project.version
 	def minecraftRange = project.minecraft_range
+	def javaVersion = project.java_version
 	inputs.property "version", version
 	inputs.property "minecraftRange", minecraftRange
+	inputs.property "javaVersion", javaVersion
 
 	filesMatching("fabric.mod.json") {
-		expand "version": version, "minecraft": minecraftRange
+		expand "version": version, "minecraft": minecraftRange, "java": javaVersion
 	}
 }
 
+def javaVersion = Integer.parseInt(project.java_version)
 tasks.withType(JavaCompile).configureEach {
-	it.options.release = 25
+	it.options.release = javaVersion
 }
 
 java {
-	sourceCompatibility = JavaVersion.VERSION_25
-	targetCompatibility = JavaVersion.VERSION_25
+	sourceCompatibility = JavaVersion.toVersion(javaVersion)
+	targetCompatibility = JavaVersion.toVersion(javaVersion)
 }
