@@ -97,9 +97,18 @@ processResources {
 	filesMatching("fabric.mod.json") {
 		expand "version": version, "minecraft": minecraftRange, "java": javaVersion
 	}
+	// Mixin refuses a level above the running Java, and 1.21 runs on Java 21
+	filesMatching("tweakswitch.mixins.json") {
+		expand "java": javaVersion
+	}
 }
 
 def javaVersion = Integer.parseInt(project.java_version)
+// Run the game (and its tests) on the Java that version ships with, so a Java 25-only problem can't hide on 1.21
+def gameJava = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(javaVersion) }
+tasks.withType(JavaExec).configureEach {
+	javaLauncher = gameJava
+}
 tasks.withType(JavaCompile).configureEach {
 	it.options.release = javaVersion
 	it.options.compilerArgs += ["-Xmaxerrs", "1000"]
