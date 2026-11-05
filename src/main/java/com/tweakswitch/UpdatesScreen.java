@@ -24,6 +24,12 @@ import org.slf4j.Logger;
  * file hash, so this works for zips dropped in by hand too. Vanilla Tweaks has no versions, so those can only be fetched again.
  */
 public class UpdatesScreen extends DownloadScreen<UpdatesScreen.Item> {
+	/** Updates replace packs you already have, so their switches stay as they were. */
+	@Override
+	protected boolean switchesOnDownloads() {
+		return false;
+	}
+
 	private static final Logger LOGGER = LogUtils.getLogger();
 	/** Categories the player flipped from their default; "Updates available" and Vanilla Tweaks start open. */
 	private static final Set<String> TOGGLED = new HashSet<>();

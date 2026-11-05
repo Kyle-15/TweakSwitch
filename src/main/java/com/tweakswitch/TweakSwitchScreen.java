@@ -12,6 +12,7 @@ import java.util.Comparator;
 import java.security.MessageDigest;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.HexFormat;
 import java.util.HashSet;
 import java.util.List;
@@ -130,8 +131,18 @@ public class TweakSwitchScreen extends PackListScreen {
 	private Map<Tab, Integer> tabCounts = Map.of();
 	/** Which pack each switch row shows, for the Shift preview. */
 	private final Map<AbstractWidget, Pack> switchRows = new HashMap<>();
-	/** Switch state the player has chosen but not yet applied, by pack id. */
-	private final Map<String, Boolean> pending = new HashMap<>();
+	/** Switch state the player has chosen but not yet applied, by pack id, in the order chosen. */
+	private final Map<String, Boolean> pending = new LinkedHashMap<>();
+	/** Files just downloaded with "Switch On" set, to show switched on next time this screen shows. */
+	private static final List<String> SWITCH_ON = new ArrayList<>();
+
+	/**
+	 * Switches the files on (pending, like a click) the next time the screen shows. Listed in download order; added in
+	 * reverse, so packs pulled in as requirements end up below the packs that need them.
+	 */
+	public static void switchOnWhenShown(final List<String> fileNames) {
+		SWITCH_ON.addAll(fileNames);
+	}
 
 	public TweakSwitchScreen(final @Nullable Screen lastScreen) {
 		super(lastScreen, Component.translatable("tweakswitch.title"));
@@ -142,6 +153,13 @@ public class TweakSwitchScreen extends PackListScreen {
 	public void added() {
 		// Runs every time the screen is shown, including coming back from the downloader: pick up new packs in the folder
 		this.repository.reload();
+		for (int i = SWITCH_ON.size() - 1; i >= 0; i--) {
+			String id = TweakSwitchPackSource.idFor(SWITCH_ON.get(i));
+			if (this.repository.getAvailableIds().contains(id) && !this.repository.getSelectedIds().contains(id)) {
+				this.pending.put(id, true);
+			}
+		}
+		SWITCH_ON.clear();
 		this.refreshList();
 		// Look inside every pack in the background, for grouping by what it changes, searching its files and previews
 		List<Path> files = this.ourPacks().stream().map(TweakSwitchScreen::path).toList();

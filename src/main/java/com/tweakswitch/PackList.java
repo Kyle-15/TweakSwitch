@@ -102,7 +102,8 @@ public class PackList extends BridgeList<PackList.Entry> {
 		Entry entry = this.getHovered();
 		if (entry instanceof WidgetRow row) {
 			for (AbstractWidget widget : row.widgets) {
-				if (widget.isMouseOver(mouseX, mouseY)) {
+				// Not isMouseOver: that ignores disabled widgets, like tiles for packs you already have, which still preview
+				if (widget.visible && mouseX >= widget.getX() && mouseX < widget.getRight() && mouseY >= widget.getY() && mouseY < widget.getBottom()) {
 					return widget;
 				}
 			}

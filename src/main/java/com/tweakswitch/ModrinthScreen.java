@@ -134,6 +134,7 @@ public class ModrinthScreen extends DownloadScreen<Modrinth.Project> {
 				}
 			},
 			this.createDownloadButton(),
+			this.createSwitchOnToggle(),
 			this.button(Component.translatable("tweakswitch.website"), 70, ConfirmLinkScreen.confirmLink(this, Modrinth.SITE)),
 			this.button(CommonComponents.GUI_DONE, 70, button -> this.onClose())
 		);

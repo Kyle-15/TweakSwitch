@@ -19,6 +19,8 @@ public final class Settings {
 	public String groupBy = "CHANGES";
 	/** Which tab the TweakSwitch screen shows: a {@link TweakSwitchScreen.Tab} name. */
 	public String tab = "IMPORTED";
+	/** Whether downloaded resource packs come back switched on (applied with the TweakSwitch screen's Done). */
+	public boolean switchOnDownloads = true;
 
 	private static Path file() {
 		return TweakSwitch.packsDir().getParent().resolve("settings.json");

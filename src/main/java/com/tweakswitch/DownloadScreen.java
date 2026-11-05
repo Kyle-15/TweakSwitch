@@ -146,7 +146,34 @@ public abstract class DownloadScreen<T> extends PackListScreen {
 
 	/** The second line of the "Downloaded 3 packs" message. */
 	protected Component doneHint() {
-		return Component.translatable("tweakswitch.doneHint");
+		return Component.translatable(this.switchesOn() ? "tweakswitch.doneHintOn" : "tweakswitch.doneHint");
+	}
+
+	/** Whether downloads here are new resource packs that the "Switch On" setting applies to (not updates or data packs). */
+	protected boolean switchesOnDownloads() {
+		return this.indexed();
+	}
+
+	private boolean switchesOn() {
+		return this.switchesOnDownloads() && Settings.get().switchOnDownloads;
+	}
+
+	/** "Switch On: Yes": whether downloaded packs come back switched on. Saved for next time. */
+	protected AbstractWidget createSwitchOnToggle() {
+		ThemedButton toggle = new ThemedButton(this.theme(), ThemedButton.Kind.SECONDARY, Component.empty(), 92, button -> {
+			Settings settings = Settings.get();
+			settings.switchOnDownloads = !settings.switchOnDownloads;
+			settings.save();
+		}) {
+			@Override
+			public Component getMessage() {
+				boolean on = Settings.get().switchOnDownloads;
+				Component full = Component.translatable("tweakswitch.switchOn", Component.translatable(on ? "options.on" : "options.off"));
+				// In a narrow window the footer squeezes it, so it switches to "Auto ✔" rather than a cut-off word
+				return DownloadScreen.this.font.width(full) + 8 <= this.getWidth() ? full : Component.translatable("tweakswitch.switchOn.short", on ? "✔" : "✘");
+			}
+		};
+		return toggle.withTooltip(Component.translatable("tweakswitch.switchOn.tooltip"));
 	}
 
 	protected Set<String> downloadedFiles() {
@@ -232,6 +259,9 @@ public abstract class DownloadScreen<T> extends PackListScreen {
 					Component.translatable(done == 1 ? "tweakswitch.doneOne" : "tweakswitch.done", done),
 					failures > 0 ? Component.translatable("tweakswitch.someFailed", failures).withStyle(ChatFormatting.RED) : this.doneHint()
 				);
+				if (this.switchesOn() && !succeeded.isEmpty()) {
+					TweakSwitchScreen.switchOnWhenShown(succeeded.stream().map(this::fileName).toList());
+				}
 				this.afterDownload(succeeded);
 				this.refreshIfShown();
 			});

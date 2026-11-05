@@ -107,13 +107,16 @@ public class VanillaTweaksScreen extends DownloadScreen<VanillaTweaks.VtPack> {
 
 	@Override
 	protected void addFooter() {
-		this.addFooterButtons(
-			this.button(Component.translatable("tweakswitch.vt.selectShown"), 90, button -> this.toggleShown())
-				.withTooltip(Component.translatable("tweakswitch.vt.selectShown.tooltip")),
-			this.createDownloadButton(),
-			this.button(Component.translatable("tweakswitch.website"), 70, button -> ConfirmLinkScreen.confirmLinkNow(this, this.kind.site, true)),
-			this.button(CommonComponents.GUI_DONE, 70, button -> this.onClose())
-		);
+		List<AbstractWidget> buttons = new ArrayList<>();
+		buttons.add(this.button(Component.translatable("tweakswitch.vt.selectShown"), 90, button -> this.toggleShown())
+			.withTooltip(Component.translatable("tweakswitch.vt.selectShown.tooltip")));
+		buttons.add(this.createDownloadButton());
+		if (this.switchesOnDownloads()) {
+			buttons.add(this.createSwitchOnToggle());
+		}
+		buttons.add(this.button(Component.translatable("tweakswitch.website"), 70, button -> ConfirmLinkScreen.confirmLinkNow(this, this.kind.site, true)));
+		buttons.add(this.button(CommonComponents.GUI_DONE, 70, button -> this.onClose()));
+		this.addFooterButtons(buttons.toArray(AbstractWidget[]::new));
 	}
 
 	@Override

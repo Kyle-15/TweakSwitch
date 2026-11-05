@@ -51,6 +51,8 @@ Ideas for future versions, roughly in the order they'd help most. Tick them off 
 - [x] **Vanilla Tweaks data packs and crafting tweaks** in their own window on the Create World screen's More tab, switched on for the new world (1.4.0)
 - [x] **Download Mods:** packs that need mods can fetch them from Modrinth into the mods folder, with a note to restart (1.4.0)
 - [x] **Pictures saved on disk** for a week, up to 256 MB (1.4.0)
+- [x] **Switch On:** downloaded packs come back switched on, with a toggle in the downloaders (1.4.0)
+- [x] **Previews for packs you already have** in the Vanilla Tweaks and Modrinth pickers (1.4.0)
 - [x] **Minecraft 1.21.9, 1.21.10 and 1.21.11:** same features as on 26.x, all passing the in-game test (1.3.0)
 - [x] **Minecraft 26.1, 26.2 and 26.3:** one jar per version family from one codebase, all passing the in-game test (1.2.1)
 - [x] **Shift previews** on the TweakSwitch, Vanilla Tweaks and Modrinth screens: tap Shift to turn the preview panel on or off (1.2.0)

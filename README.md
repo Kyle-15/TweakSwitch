@@ -25,7 +25,7 @@ A Fabric mod for Minecraft 1.21.9 to 1.21.11 and 26.1 to 26.3 that turns resourc
 ## Use
 
 - Press **K** in-game (change it in Controls → TweakSwitch), or click **TweakSwitch** in the top-left of the Resource Packs screen.
-- **+ Vanilla Tweaks / + Modrinth:** click packs to pick them, then **Download**. They show up as switches on their own tab.
+- **+ Vanilla Tweaks / + Modrinth:** click packs to pick them, then **Download**. They show up as switches on their own tab, already switched on; click **Done** to apply. Turn **Switch On** off in the downloader if you'd rather choose yourself.
 - **Shift:** tap it to turn hover previews on or off.
 - **Updates:** check your packs for newer versions.
 - **Data packs:** when creating a world, open the **More** tab and click **Vanilla Tweaks Data Packs...**.

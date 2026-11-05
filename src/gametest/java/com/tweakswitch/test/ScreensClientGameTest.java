@@ -194,8 +194,35 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		context.waitTicks(10);
 		context.takeScreenshot("tweakswitch-picker-downloaded");
 
+		// A pack you already have still previews when hovered, even though its tile can't be picked again
+		AbstractWidget doneSpot = firstTwo.get(0);
+		moveTo(context, doneSpot);
+		context.waitTicks(60);
+		AbstractWidget hoveredDone = context.computeOnClient(minecraft -> {
+			try {
+				Method method = PackListScreen.class.getDeclaredMethod("hoveredListWidget", double.class, double.class);
+				method.setAccessible(true);
+				return (AbstractWidget) method.invoke(Compat.screen(minecraft), doneSpot.getX() + doneSpot.getWidth() / 2.0, doneSpot.getY() + doneSpot.getHeight() / 2.0);
+			} catch (ReflectiveOperationException e) {
+				throw new RuntimeException(e);
+			}
+		});
+		if (hoveredDone == null || hoveredDone.active) {
+			throw new AssertionError("Hovering a downloaded pack's tile should find it for the preview");
+		}
+		context.takeScreenshot("tweakswitch-picker-preview-downloaded");
+		context.getInput().setCursorPos(0, 0);
+		List<String> downloadedVt = context.computeOnClient(minecraft -> List.copyOf(fileNames(TweakSwitch.packsDir()).stream().filter(name -> name.startsWith("VT - ")).toList()));
+
 		context.clickScreenButton("gui.done");
 		context.waitForScreen(TweakSwitchScreen.class);
+		// With Switch On (the default) the new packs come back switched on, waiting for Done
+		Map<String, Boolean> switchedOn = context.computeOnClient(minecraft -> Map.copyOf((Map<String, Boolean>) field(TweakSwitchScreen.class, Compat.screen(minecraft), "pending")));
+		for (String file : downloadedVt) {
+			if (!Boolean.TRUE.equals(switchedOn.get("tweakswitch/" + file))) {
+				throw new AssertionError(file + " should be switched on after downloading: " + switchedOn);
+			}
+		}
 		if (TweakSwitchScreen.Tab.fromSettingsForTest() != TweakSwitchScreen.Tab.VANILLA_TWEAKS) {
 			throw new AssertionError("After a Vanilla Tweaks download the Vanilla Tweaks tab should show");
 		}
