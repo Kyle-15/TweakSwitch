@@ -9,7 +9,7 @@ Ideas for future versions, roughly in the order they'd help most. Tick them off 
 - [ ] **UI size option** (Compact / Normal) so the bigger look stays available.
 - [ ] **Pack order.** Choose which pack wins when two change the same thing, with up/down arrows or drag-to-reorder on the switch cards.
 - [ ] **Conflict warnings.** Warn when switching on two Vanilla Tweaks packs that clash (e.g. two crosshairs) and offer to turn the other one off.
-- [ ] **Vanilla Tweaks credit.** Keep "Vanilla Tweaks · vanillatweaks.net" in downloaded packs' descriptions (the mod currently replaces it), and ask Vanilla Tweaks for permission for the downloader.
+- [ ] **Vanilla Tweaks credit.** Keep "Vanilla Tweaks · vanillatweaks.net" in downloaded packs' descriptions (the mod currently replaces it). Permission for the downloader: granted.
 
 ## Features
 
@@ -27,7 +27,7 @@ Ideas for future versions, roughly in the order they'd help most. Tick them off 
 ## Reliability
 
 - [ ] **Offline and error handling.** Clear messages and a Retry button when there's no internet or a site is down, instead of a raw error.
-- [ ] **Cache lists and icons on disk.** Keep the Vanilla Tweaks pack list, icons and previews for a day so screens open instantly and make fewer requests.
+- [ ] **Cache the pack lists on disk** too, like pictures already are, so screens open instantly.
 - [ ] **Back off when rate-limited.** Slow down and retry if Modrinth answers "too many requests" (HTTP 429).
 - [ ] **Survive broken packs.** If a downloaded zip is damaged, show it as broken on its card (with a re-download button) instead of silently skipping it.
 - [ ] **Keyboard and narrator support** for the custom cards, tiles and switches (Tab to move, Enter to toggle, screen reader text).
@@ -43,11 +43,14 @@ Ideas for future versions, roughly in the order they'd help most. Tick them off 
 
 - [ ] **Minecraft 1.21.1 to 1.21.8.** Older still: the screen and drawing code changed again before 1.21.9.
 - [ ] **26.4** once it's released: add `versions/26.4.properties` and, if needed, a `src/compat/26.4/` file.
-- [ ] **Vanilla Tweaks data packs and crafting tweaks.** Per-world gameplay tweaks, installed into each world's folder.
+- [ ] **Data packs for existing worlds**, and Modrinth data packs in the same window.
 - [ ] **Translations** into other languages.
 
 ## Done
 
+- [x] **Vanilla Tweaks data packs and crafting tweaks** in their own window on the Create World screen's More tab, switched on for the new world (1.4.0)
+- [x] **Download Mods:** packs that need mods can fetch them from Modrinth into the mods folder, with a note to restart (1.4.0)
+- [x] **Pictures saved on disk** for a week, up to 256 MB (1.4.0)
 - [x] **Minecraft 1.21.9, 1.21.10 and 1.21.11:** same features as on 26.x, all passing the in-game test (1.3.0)
 - [x] **Minecraft 26.1, 26.2 and 26.3:** one jar per version family from one codebase, all passing the in-game test (1.2.1)
 - [x] **Shift previews** on the TweakSwitch, Vanilla Tweaks and Modrinth screens: tap Shift to turn the preview panel on or off (1.2.0)

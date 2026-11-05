@@ -301,6 +301,83 @@ public final class Modrinth {
 		}
 	}
 
+	/** What {@link #installMods} did: mods saved to the mods folder, and ones with no Fabric build for this version. */
+	public record ModInstallResult(List<String> installed, List<LinkedProject> failed) {
+	}
+
+	public static Path modsDir() {
+		return FabricLoader.getInstance().getGameDir().resolve("mods");
+	}
+
+	/**
+	 * Downloads the newest Fabric build for this Minecraft version of each mod into the mods folder, plus any mods those
+	 * require that aren't installed. Release builds are preferred over betas. They load the next time the game starts.
+	 *
+	 * @param progress told the title of each mod as it starts downloading
+	 */
+	public static ModInstallResult installMods(final List<LinkedProject> mods, final java.util.function.Consumer<String> progress) throws InterruptedException {
+		java.util.ArrayDeque<LinkedProject> queue = new java.util.ArrayDeque<>(mods);
+		Set<String> seen = new java.util.HashSet<>();
+		mods.forEach(mod -> seen.add(mod.id()));
+		List<String> installed = new ArrayList<>();
+		List<LinkedProject> failed = new ArrayList<>();
+		Path folder = modsDir();
+		while (!queue.isEmpty()) {
+			LinkedProject mod = queue.poll();
+			progress.accept(mod.title());
+			try {
+				String url = API + "/project/" + mod.id() + "/version?game_versions=" + encode("[\"" + gameVersion() + "\"]") + "&loaders=" + encode("[\"fabric\"]");
+				JsonArray versions = JsonParser.parseString(WebClient.getString(URI.create(url))).getAsJsonArray();
+				JsonObject chosen = null;
+				for (JsonElement element : versions) {
+					JsonObject candidate = element.getAsJsonObject();
+					if (chosen == null) {
+						chosen = candidate;
+					}
+					if ("release".equals(string(candidate, "version_type"))) {
+						chosen = candidate;
+						break;
+					}
+				}
+				if (chosen == null) {
+					failed.add(mod);
+					continue;
+				}
+				Version version = parseVersion(chosen);
+				if (version.fileName().isEmpty() || !version.fileName().endsWith(".jar")) {
+					failed.add(mod);
+					continue;
+				}
+				Files.createDirectories(folder);
+				// The file name comes from Modrinth: keep only its last part so it can't point outside the mods folder
+				Path target = folder.resolve(Path.of(version.fileName()).getFileName().toString());
+				if (!Files.exists(target)) {
+					downloadVersion(version, target);
+				}
+				installed.add(mod.title());
+
+				List<String> required = version.dependencies().stream()
+					.filter(dependency -> dependency.type().equals("required") && seen.add(dependency.projectId()))
+					.map(Dependency::projectId)
+					.toList();
+				if (!required.isEmpty()) {
+					JsonArray ids = new JsonArray();
+					required.forEach(ids::add);
+					for (JsonElement element : JsonParser.parseString(WebClient.getString(URI.create(API + "/projects?ids=" + encode(ids.toString())))).getAsJsonArray()) {
+						JsonObject project = element.getAsJsonObject();
+						LinkedProject dependency = new LinkedProject(project.get("id").getAsString(), project.get("slug").getAsString(), project.get("title").getAsString(), project.get("project_type").getAsString());
+						if (dependency.projectType().equals("mod") && !dependency.isInstalled()) {
+							queue.add(dependency);
+						}
+					}
+				}
+			} catch (IOException e) {
+				failed.add(mod);
+			}
+		}
+		return new ModInstallResult(List.copyOf(installed), List.copyOf(failed));
+	}
+
 	/** Hash → the version that file belongs to, and hash → the newest version for this game version. */
 	public record UpdateCheck(Map<String, Version> current, Map<String, Version> latest) {
 	}

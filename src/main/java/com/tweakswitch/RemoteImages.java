@@ -7,7 +7,6 @@ import com.twelvemonkeys.imageio.plugins.webp.WebPImageReaderSpi;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
@@ -29,7 +28,7 @@ import org.slf4j.Logger;
 import org.w3c.dom.Node;
 
 /**
- * Downloads preview images on demand and keeps them as textures. Animated GIFs keep every frame so previews play like they
+ * Loads preview images on demand (from {@link ImageCache}, which downloads them once) and keeps them as textures. Animated GIFs keep every frame so previews play like they
  * do on the websites. The least recently shown images are dropped once too many frames are held.
  */
 public final class RemoteImages {
@@ -128,7 +127,7 @@ public final class RemoteImages {
 				return;
 			}
 			try {
-				List<RawFrame> frames = decode(WebClient.getBytes(URI.create(url)));
+				List<RawFrame> frames = decode(ImageCache.get(url));
 				Minecraft.getInstance().execute(() -> store(url, frames, true));
 			} catch (Throwable e) {
 				LOGGER.debug("Couldn't load image {}", url, e);
@@ -147,7 +146,7 @@ public final class RemoteImages {
 		IMAGES.put(url, Image.LOADING);
 		ICON_LOADER.execute(() -> {
 			try {
-				byte[] bytes = WebClient.getBytes(URI.create(url));
+				byte[] bytes = ImageCache.get(url);
 				List<RawFrame> frames = List.of(decodeStill(bytes, MAX_ICON_WIDTH));
 				Minecraft.getInstance().execute(() -> store(url, frames, false));
 			} catch (Throwable e) {

@@ -24,13 +24,34 @@ import net.minecraft.SharedConstants;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Talks to vanillatweaks.net the same way its resource pack picker does: reads the pack list, then asks the site to
- * build a zip holding just one pack and downloads it. Calls block, so run them off the render thread.
+ * Talks to vanillatweaks.net the same way its pickers do: reads the pack list, then asks the site to build a zip holding
+ * just one pack and downloads it. Calls block, so run them off the render thread.
  */
 public final class VanillaTweaks {
 	public static final URI SITE = URI.create("https://vanillatweaks.net/picker/resource-packs/");
 	private static final String BASE = "https://vanillatweaks.net";
 	public static final String FILE_PREFIX = "VT - ";
+
+	/** The site's three pickers. Each has its own list, icons and zip builder. */
+	public enum Kind {
+		RESOURCE_PACKS("rpcategories", "resourcepacks", "zipresourcepacks", FILE_PREFIX, "resource-packs"),
+		DATA_PACKS("dpcategories", "datapacks", "zipdatapacks", FILE_PREFIX, "datapacks"),
+		CRAFTING_TWEAKS("ctcategories", "craftingtweaks", "zipcraftingtweaks", "VT Crafting - ", "crafting-tweaks");
+
+		private final String list;
+		private final String assets;
+		private final String zipper;
+		final String filePrefix;
+		public final URI site;
+
+		Kind(final String list, final String assets, final String zipper, final String filePrefix, final String picker) {
+			this.list = list;
+			this.assets = assets;
+			this.zipper = zipper;
+			this.filePrefix = filePrefix;
+			this.site = URI.create(BASE + "/picker/" + picker + "/");
+		}
+	}
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
 
 	/**
@@ -40,10 +61,10 @@ public final class VanillaTweaks {
 	 */
 	public record VtPack(
 		String id, String display, String description, String categoryPath, String category, List<String> incompatible, @Nullable String previewExtension,
-		@Nullable String warning
+		@Nullable String warning, Kind kind
 	) {
 		public String fileName() {
-			return FILE_PREFIX + display.replaceAll("[\\\\/:*?\"<>|]", "_") + ".zip";
+			return kind.filePrefix + display.replaceAll("[\\\\/:*?\"<>|]", "_") + ".zip";
 		}
 	}
 
@@ -58,14 +79,20 @@ public final class VanillaTweaks {
 	}
 
 	public static List<VtPack> fetchPacks() throws IOException, InterruptedException {
-		String body = WebClient.getString(URI.create(BASE + "/assets/resources/json/" + siteVersion() + "/rpcategories.json"));
+		return fetchPacks(Kind.RESOURCE_PACKS);
+	}
+
+	public static List<VtPack> fetchPacks(final Kind kind) throws IOException, InterruptedException {
+		String body = WebClient.getString(URI.create(BASE + "/assets/resources/json/" + siteVersion() + "/" + kind.list + ".json"));
 		List<VtPack> packs = new ArrayList<>();
-		collect(JsonParser.parseString(body).getAsJsonObject().getAsJsonArray("categories"), "", "", null, packs);
+		collect(JsonParser.parseString(body).getAsJsonObject().getAsJsonArray("categories"), "", "", null, kind, packs);
 		return packs;
 	}
 
 	/** @param parentWarning the site's warning on the nearest enclosing category, e.g. that packs need OptiFine-like mods */
-	private static void collect(final JsonArray categories, final String parentPath, final String parentLabel, final @Nullable String parentWarning, final List<VtPack> out) {
+	private static void collect(
+		final JsonArray categories, final String parentPath, final String parentLabel, final @Nullable String parentWarning, final Kind kind, final List<VtPack> out
+	) {
 		for (JsonElement element : categories) {
 			JsonObject category = element.getAsJsonObject();
 			String name = category.get("category").getAsString();
@@ -89,12 +116,13 @@ public final class VanillaTweaks {
 						label,
 						incompatible,
 						pack.has("previewExtension") ? pack.get("previewExtension").getAsString() : null,
-						warning
+						warning,
+						kind
 					));
 				}
 			}
 			if (category.has("categories")) {
-				collect(category.getAsJsonArray("categories"), path, label, warning, out);
+				collect(category.getAsJsonArray("categories"), path, label, warning, kind, out);
 			}
 		}
 	}
@@ -110,20 +138,36 @@ public final class VanillaTweaks {
 
 	/** The small square icon the website shows on each pack's tile. */
 	public static String iconUrl(final VtPack pack) {
-		return iconUrl(pack.id());
+		return iconUrl(pack.kind(), pack.id());
 	}
 
 	public static String iconUrl(final String packId) {
-		return BASE + "/assets/resources/icons/resourcepacks/" + siteVersion() + "/" + URLEncoder.encode(packId, StandardCharsets.UTF_8) + ".png";
+		return iconUrl(Kind.RESOURCE_PACKS, packId);
 	}
 
-	/** The picture the website shows when you hover a pack. */
-	public static String previewUrl(final VtPack pack) {
-		return previewUrl(pack.id(), pack.previewExtension() != null ? pack.previewExtension() : "png");
+	private static String iconUrl(final Kind kind, final String packId) {
+		return BASE + "/assets/resources/icons/" + kind.assets + "/" + siteVersion() + "/" + path(packId) + ".png";
+	}
+
+	/** The picture the website shows when you hover a pack; data packs have none (the site links a video instead). */
+	public static @Nullable String previewUrl(final VtPack pack) {
+		if (pack.kind() == Kind.DATA_PACKS) {
+			return null;
+		}
+		return previewUrl(pack.kind(), pack.id(), pack.previewExtension() != null ? pack.previewExtension() : "png");
 	}
 
 	public static String previewUrl(final String packId, final String extension) {
-		return BASE + "/assets/resources/previews/resourcepacks/" + siteVersion() + "/" + URLEncoder.encode(packId, StandardCharsets.UTF_8) + "." + extension;
+		return previewUrl(Kind.RESOURCE_PACKS, packId, extension);
+	}
+
+	private static String previewUrl(final Kind kind, final String packId, final String extension) {
+		return BASE + "/assets/resources/previews/" + kind.assets + "/" + siteVersion() + "/" + path(packId) + "." + extension;
+	}
+
+	/** Data pack ids have spaces ("armor statues"), which go in a URL path as %20, not +. */
+	private static String path(final String packId) {
+		return URLEncoder.encode(packId, StandardCharsets.UTF_8).replace("+", "%20");
 	}
 
 	/** Downloads one pack into {@code targetDir} and returns the saved file. */
@@ -133,7 +177,7 @@ public final class VanillaTweaks {
 		ids.add(pack.id());
 		packs.add(pack.categoryPath(), ids);
 		String form = "packs=" + URLEncoder.encode(packs.toString(), StandardCharsets.UTF_8) + "&version=" + URLEncoder.encode(siteVersion(), StandardCharsets.UTF_8);
-		String body = WebClient.postForm(URI.create(BASE + "/assets/server/zipresourcepacks.php"), form);
+		String body = WebClient.postForm(URI.create(BASE + "/assets/server/" + pack.kind().zipper + ".php"), form);
 
 		JsonObject result = JsonParser.parseString(body).getAsJsonObject();
 		if (!"success".equals(result.has("status") ? result.get("status").getAsString() : null) || !result.has("link")) {
@@ -143,6 +187,10 @@ public final class VanillaTweaks {
 		Path temp = Files.createTempFile("tweakswitch-", ".zip");
 		try {
 			WebClient.download(URI.create(BASE + result.get("link").getAsString()), temp);
+			if (pack.kind() == Kind.DATA_PACKS) {
+				// Data packs come wrapped: a zip holding the real pack zip
+				unwrap(temp);
+			}
 			setDescription(temp, pack.description());
 			Files.createDirectories(targetDir);
 			Path target = targetDir.resolve(pack.fileName());
@@ -150,6 +198,21 @@ public final class VanillaTweaks {
 			return target;
 		} finally {
 			Files.deleteIfExists(temp);
+		}
+	}
+
+	/** Replaces the zip with the first zip inside it. */
+	private static void unwrap(final Path zip) throws IOException {
+		Path inner = Files.createTempFile("tweakswitch-", ".zip");
+		try {
+			try (FileSystem fs = FileSystems.newFileSystem(zip); java.util.stream.Stream<Path> files = Files.walk(fs.getPath("/"))) {
+				Path packZip = files.filter(file -> file.getFileName() != null && file.getFileName().toString().endsWith(".zip")).findFirst()
+					.orElseThrow(() -> new IOException("No data pack inside the Vanilla Tweaks download"));
+				Files.copy(packZip, inner, StandardCopyOption.REPLACE_EXISTING);
+			}
+			Files.move(inner, zip, StandardCopyOption.REPLACE_EXISTING);
+		} finally {
+			Files.deleteIfExists(inner);
 		}
 	}
 

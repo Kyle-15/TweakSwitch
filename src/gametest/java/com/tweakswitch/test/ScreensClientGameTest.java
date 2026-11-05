@@ -9,6 +9,10 @@ import com.tweakswitch.Modrinth;
 import com.tweakswitch.ModsNeededScreen;
 import com.tweakswitch.TweakSwitch;
 import com.tweakswitch.UpdatesScreen;
+import com.tweakswitch.DataPacksScreen;
+import com.tweakswitch.ImageCache;
+import com.tweakswitch.ModsInstalledScreen;
+import com.tweakswitch.VanillaTweaks;
 import com.tweakswitch.WebClient;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
@@ -43,6 +47,7 @@ import net.minecraft.client.gui.components.AbstractButton;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
 import net.minecraft.server.packs.repository.Pack;
 
 /**
@@ -108,7 +113,7 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		context.waitTicks(5);
 		context.takeScreenshot("tweakswitch-small-switches");
 		context.setScreen(() -> new VanillaTweaksScreen(new TweakSwitchScreen(null)));
-		context.waitFor(minecraft -> staticField("packs") != null, 600);
+		context.waitFor(minecraft -> VanillaTweaksScreen.loadedForTest(VanillaTweaks.Kind.RESOURCE_PACKS), 600);
 		context.runOnClient(minecraft -> {
 			Set<String> expanded = staticField("EXPANDED");
 			expanded.add("Aesthetic");
@@ -132,7 +137,7 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 
 		context.clickScreenButton("tweakswitch.getVanillaTweaks");
 		context.waitForScreen(VanillaTweaksScreen.class);
-		context.waitFor(minecraft -> staticField("packs") != null, 600);
+		context.waitFor(minecraft -> VanillaTweaksScreen.loadedForTest(VanillaTweaks.Kind.RESOURCE_PACKS), 600);
 		context.waitTicks(5);
 		context.takeScreenshot("tweakswitch-picker-collapsed");
 
@@ -165,6 +170,14 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		// A moment later the animated preview should be on a different frame
 		context.waitTicks(7);
 		context.takeScreenshot("tweakswitch-picker-preview-later");
+		// Icons and the preview just shown were saved to the disk cache
+		try (java.util.stream.Stream<Path> cached = Files.list(ImageCache.dir())) {
+			if (cached.count() < 2) {
+				throw new AssertionError("Pictures weren't saved to the image cache");
+			}
+		} catch (IOException e) {
+			throw new AssertionError("No image cache folder", e);
+		}
 
 		// Pick the first two packs (pressed directly, since the cursor is imprecise)
 		for (AbstractWidget row : firstTwo) {
@@ -242,7 +255,22 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 			context.runOnClient(minecraft -> Compat.toasts(minecraft).clear());
 			context.waitTicks(2);
 			context.takeScreenshot("tweakswitch-mods-needed");
-			context.clickScreenButton("tweakswitch.mods.downloadAnyway");
+			// Download Mods saves the needed mod's Fabric build to the mods folder, then says to restart
+			Set<String> modsBefore = fileNames(Modrinth.modsDir());
+			context.clickScreenButton("tweakswitch.mods.install");
+			context.waitFor(minecraft -> Compat.screen(minecraft) instanceof ModsInstalledScreen, 1200);
+			context.waitTicks(5);
+			context.runOnClient(minecraft -> Compat.toasts(minecraft).clear());
+			context.waitTicks(2);
+			context.takeScreenshot("tweakswitch-mods-installed");
+			Set<String> newMods = fileNames(Modrinth.modsDir());
+			newMods.removeAll(modsBefore);
+			if (newMods.stream().noneMatch(name -> name.endsWith(".jar"))) {
+				throw new AssertionError("Download Mods didn't save a mod to the mods folder");
+			}
+			// Removed again so later test runs don't load it
+			newMods.forEach(name -> deleteQuietly(Modrinth.modsDir().resolve(name)));
+			context.clickScreenButton("tweakswitch.mods.continue");
 			context.waitForScreen(ModrinthScreen.class);
 		}
 		context.waitFor(minecraft -> field(DownloadScreen.class, null, "progress") == null, 1200);
@@ -417,6 +445,124 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		if (!applied) {
 			throw new AssertionError("Switching on " + packId + " didn't select it");
 		}
+
+		testDataPacks(context);
+	}
+
+	/** World creation's More tab opens a data pack window apart from resource packs; picked packs are on in the new world. */
+	private static void testDataPacks(final ClientGameTestContext context) {
+		context.runOnClient(minecraft -> CreateWorldScreen.openFresh(minecraft, () -> Compat.setScreen(minecraft, new TitleScreen())));
+		context.waitFor(minecraft -> Compat.screen(minecraft) instanceof CreateWorldScreen, 1200);
+		context.waitTicks(5);
+		// Tab headers aren't buttons, so pick the More tab (the third) the way clicking it does. The bar's class differs
+		// between versions (MenuTabBar on 26.3), but the field and its selectTab method are named the same
+		context.runOnClient(minecraft -> {
+			try {
+				Field field = CreateWorldScreen.class.getDeclaredField("tabNavigationBar");
+				field.setAccessible(true);
+				Object bar = field.get(Compat.screen(minecraft));
+				bar.getClass().getMethod("selectTab", int.class, boolean.class).invoke(bar, 2, false);
+			} catch (ReflectiveOperationException e) {
+				throw new RuntimeException(e);
+			}
+		});
+		context.waitTicks(5);
+		context.takeScreenshot("tweakswitch-world-more-tab");
+		context.clickScreenButton("tweakswitch.dp.button");
+		context.waitForScreen(DataPacksScreen.class);
+		context.waitFor(minecraft -> VanillaTweaksScreen.loadedForTest(VanillaTweaks.Kind.DATA_PACKS)
+			&& VanillaTweaksScreen.loadedForTest(VanillaTweaks.Kind.CRAFTING_TWEAKS), 600);
+
+		// Open every category on both tabs and pick the first pack on each
+		context.runOnClient(minecraft -> {
+			Set<String> expanded = staticField("EXPANDED");
+			expanded.clear();
+		});
+		List<String> picked = new java.util.ArrayList<>();
+		for (VanillaTweaks.Kind kind : List.of(VanillaTweaks.Kind.CRAFTING_TWEAKS, VanillaTweaks.Kind.DATA_PACKS)) {
+			context.runOnClient(minecraft -> {
+				Object screen = Compat.screen(minecraft);
+				try {
+					Field field = VanillaTweaksScreen.class.getDeclaredField("kind");
+					field.setAccessible(true);
+					field.set(screen, kind);
+					Field packsField = VanillaTweaksScreen.class.getDeclaredField("PACKS");
+					packsField.setAccessible(true);
+					Map<VanillaTweaks.Kind, List<VanillaTweaks.VtPack>> all = (Map<VanillaTweaks.Kind, List<VanillaTweaks.VtPack>>) packsField.get(null);
+					Set<String> expanded = staticField("EXPANDED");
+					expanded.add(all.get(kind).get(0).category());
+				} catch (ReflectiveOperationException e) {
+					throw new RuntimeException(e);
+				}
+				refresh(minecraft);
+			});
+			context.waitTicks(30);
+			String name = context.computeOnClient(minecraft -> {
+				Map.Entry<AbstractWidget, ?> first = rows(minecraft).entrySet().stream()
+					.min(Comparator.comparingInt((Map.Entry<AbstractWidget, ?> entry) -> entry.getKey().getY()).thenComparingInt(entry -> entry.getKey().getX()))
+					.orElseThrow(() -> new AssertionError("No " + kind + " listed"));
+				((AbstractButton) first.getKey()).onPress(null);
+				return ((VanillaTweaks.VtPack) first.getValue()).fileName();
+			});
+			picked.add(name);
+			context.waitTicks(3);
+			if (kind == VanillaTweaks.Kind.CRAFTING_TWEAKS) {
+				context.takeScreenshot("tweakswitch-world-crafting-tweaks");
+			}
+		}
+		context.getInput().setCursorPos(0, 0);
+		context.waitTicks(3);
+		context.takeScreenshot("tweakswitch-world-data-packs");
+
+		Path folder = context.computeOnClient(minecraft -> {
+			try {
+				Method method = DataPacksScreen.class.getDeclaredMethod("targetFolder");
+				method.setAccessible(true);
+				return (Path) method.invoke(Compat.screen(minecraft));
+			} catch (ReflectiveOperationException e) {
+				throw new RuntimeException(e);
+			}
+		});
+		context.runOnClient(minecraft -> ((Button) field(DownloadScreen.class, Compat.screen(minecraft), "downloadButton")).onPress(null));
+		context.waitFor(minecraft -> field(DownloadScreen.class, null, "progress") == null, 1200);
+		context.waitTicks(10);
+		context.runOnClient(minecraft -> Compat.toasts(minecraft).clear());
+		context.waitTicks(2);
+		context.takeScreenshot("tweakswitch-world-data-packs-added");
+		for (String file : picked) {
+			if (!Files.exists(folder.resolve(file))) {
+				throw new AssertionError(file + " wasn't saved to the new world's data pack folder");
+			}
+		}
+		// Not listed with resource packs
+		if (Files.exists(TweakSwitch.packsDir().resolve(picked.get(0)))) {
+			throw new AssertionError("A data pack landed in the resource pack folder");
+		}
+
+		// Done switches them on for the new world, through world creation's own data pack check
+		context.clickScreenButton("gui.done");
+		context.waitFor(minecraft -> Compat.screen(minecraft) instanceof CreateWorldScreen, 1200);
+		context.waitTicks(5);
+		List<String> enabled = context.computeOnClient(minecraft -> List.copyOf(
+			((CreateWorldScreen) Compat.screen(minecraft)).getUiState().getSettings().dataConfiguration().dataPacks().getEnabled()));
+		for (String file : picked) {
+			if (!enabled.contains("file/" + file)) {
+				throw new AssertionError(file + " isn't switched on for the new world: " + enabled);
+			}
+		}
+		context.takeScreenshot("tweakswitch-world-back");
+		context.setScreen(TitleScreen::new);
+		context.waitTicks(5);
+	}
+
+	private static Set<String> fileNames(final Path folder) {
+		Set<String> names = new java.util.HashSet<>();
+		try (java.util.stream.Stream<Path> files = Files.list(folder)) {
+			files.forEach(file -> names.add(file.getFileName().toString()));
+		} catch (IOException e) {
+			// No folder yet: nothing in it
+		}
+		return names;
 	}
 
 	/** Searches Modrinth for the title and picks the result with exactly that title. */

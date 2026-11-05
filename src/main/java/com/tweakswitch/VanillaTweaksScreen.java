@@ -3,6 +3,8 @@ package com.tweakswitch;
 import com.mojang.logging.LogUtils;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -22,47 +24,80 @@ import net.minecraft.network.chat.MutableComponent;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 
-/** Lists every Vanilla Tweaks resource pack for this Minecraft version and downloads the chosen ones one zip per pack. */
+/**
+ * Lists every Vanilla Tweaks pack of one kind for this Minecraft version and downloads the chosen ones one zip per pack.
+ * This screen does resource packs; {@link DataPacksScreen} reuses it for data packs and crafting tweaks.
+ */
 public class VanillaTweaksScreen extends DownloadScreen<VanillaTweaks.VtPack> {
 	private static final Logger LOGGER = LogUtils.getLogger();
 
 	// Kept for the session so reopening the screen doesn't fetch the list again
-	private static @Nullable List<VanillaTweaks.VtPack> packs;
-	private static @Nullable String loadError;
-	private static boolean loading;
+	private static final Map<VanillaTweaks.Kind, List<VanillaTweaks.VtPack>> PACKS = new EnumMap<>(VanillaTweaks.Kind.class);
+	private static final Map<VanillaTweaks.Kind, String> LOAD_ERRORS = new EnumMap<>(VanillaTweaks.Kind.class);
+	private static final Set<VanillaTweaks.Kind> LOADING = EnumSet.noneOf(VanillaTweaks.Kind.class);
 	/** Categories the player opened; all start closed. Kept for the session. */
 	private static final Set<String> EXPANDED = new HashSet<>();
 
+	/** Which of the site's pickers is showing. */
+	protected VanillaTweaks.Kind kind;
+
 	public VanillaTweaksScreen(final @Nullable Screen lastScreen) {
-		super(lastScreen, Component.translatable("tweakswitch.vt.title", VanillaTweaks.siteVersion()));
+		this(lastScreen, VanillaTweaks.Kind.RESOURCE_PACKS, Component.translatable("tweakswitch.vt.title", VanillaTweaks.siteVersion()));
+	}
+
+	protected VanillaTweaksScreen(final @Nullable Screen lastScreen, final VanillaTweaks.Kind kind, final Component title) {
+		super(lastScreen, title);
+		this.kind = kind;
+	}
+
+	/** Whether the list for that kind has loaded (or failed to), for the screenshot test. */
+	public static boolean loadedForTest(final VanillaTweaks.Kind kind) {
+		return PACKS.containsKey(kind) || LOAD_ERRORS.containsKey(kind);
 	}
 
 	@Override
 	protected void init() {
 		super.init();
-		if (packs == null && !loading) {
-			this.loadPacks();
+		this.loadIfNeeded();
+	}
+
+	protected void loadIfNeeded() {
+		if (!PACKS.containsKey(this.kind) && !LOADING.contains(this.kind)) {
+			this.loadPacks(this.kind);
 		}
 	}
 
-	private void loadPacks() {
-		loading = true;
-		loadError = null;
+	/** The list for the showing kind, or null while it loads. */
+	protected @Nullable List<VanillaTweaks.VtPack> packs() {
+		return PACKS.get(this.kind);
+	}
+
+	protected static int packCount(final VanillaTweaks.Kind kind) {
+		List<VanillaTweaks.VtPack> packs = PACKS.get(kind);
+		return packs == null ? 0 : packs.size();
+	}
+
+	private void loadPacks(final VanillaTweaks.Kind kind) {
+		LOADING.add(kind);
+		LOAD_ERRORS.remove(kind);
 		Thread thread = new Thread(() -> {
 			List<VanillaTweaks.VtPack> result = null;
 			String error = null;
 			try {
-				result = VanillaTweaks.fetchPacks();
+				result = VanillaTweaks.fetchPacks(kind);
 			} catch (Exception e) {
-				LOGGER.warn("Failed to load the Vanilla Tweaks pack list", e);
+				LOGGER.warn("Failed to load the Vanilla Tweaks list for {}", kind, e);
 				error = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
 			}
 			List<VanillaTweaks.VtPack> loaded = result;
 			String failure = error;
 			this.minecraft.execute(() -> {
-				packs = loaded;
-				loadError = failure;
-				loading = false;
+				if (loaded != null) {
+					PACKS.put(kind, loaded);
+				} else {
+					LOAD_ERRORS.put(kind, failure);
+				}
+				LOADING.remove(kind);
 				this.refreshIfShown();
 			});
 		}, "TweakSwitch pack list");
@@ -76,14 +111,15 @@ public class VanillaTweaksScreen extends DownloadScreen<VanillaTweaks.VtPack> {
 			this.button(Component.translatable("tweakswitch.vt.selectShown"), 90, button -> this.toggleShown())
 				.withTooltip(Component.translatable("tweakswitch.vt.selectShown.tooltip")),
 			this.createDownloadButton(),
-			this.button(Component.translatable("tweakswitch.website"), 70, ConfirmLinkScreen.confirmLink(this, VanillaTweaks.SITE)),
+			this.button(Component.translatable("tweakswitch.website"), 70, button -> ConfirmLinkScreen.confirmLinkNow(this, this.kind.site, true)),
 			this.button(CommonComponents.GUI_DONE, 70, button -> this.onClose())
 		);
 	}
 
 	@Override
 	protected void fillPackList(final PackList list) {
-		if (packs == null) {
+		if (this.packs() == null) {
+			String loadError = LOAD_ERRORS.get(this.kind);
 			list.addText(loadError != null
 				? Component.translatable("tweakswitch.loadFailed", loadError).withStyle(ChatFormatting.RED)
 				: Component.translatable("tweakswitch.loading").withStyle(ChatFormatting.GRAY));
@@ -101,7 +137,7 @@ public class VanillaTweaksScreen extends DownloadScreen<VanillaTweaks.VtPack> {
 		}
 
 		byCategory.forEach((category, categoryPacks) -> {
-			long picked = categoryPacks.stream().filter(pack -> this.selected.containsKey(pack.id())).count();
+			long picked = categoryPacks.stream().filter(pack -> this.selected.containsKey(this.id(pack))).count();
 			String count = categoryPacks.size() + (picked > 0 ? ", " + picked + " picked" : "");
 			this.addCategory(list, EXPANDED, false, category, count, () -> {
 				List<AbstractWidget> widgets = new ArrayList<>();
@@ -114,6 +150,7 @@ public class VanillaTweaksScreen extends DownloadScreen<VanillaTweaks.VtPack> {
 	}
 
 	private List<VanillaTweaks.VtPack> shownPacks() {
+		List<VanillaTweaks.VtPack> packs = this.packs();
 		return packs == null ? List.of() : packs.stream().filter(pack -> this.matches(pack.display(), pack.description(), pack.category())).toList();
 	}
 
@@ -121,10 +158,10 @@ public class VanillaTweaksScreen extends DownloadScreen<VanillaTweaks.VtPack> {
 	private void toggleShown() {
 		Set<String> downloaded = this.downloadedFiles();
 		List<VanillaTweaks.VtPack> candidates = this.shownPacks().stream().filter(pack -> !downloaded.contains(pack.fileName())).toList();
-		if (candidates.stream().allMatch(pack -> this.selected.containsKey(pack.id()))) {
-			candidates.forEach(pack -> this.selected.remove(pack.id()));
+		if (candidates.stream().allMatch(pack -> this.selected.containsKey(this.id(pack)))) {
+			candidates.forEach(pack -> this.selected.remove(this.id(pack)));
 		} else {
-			candidates.forEach(pack -> this.selected.put(pack.id(), pack));
+			candidates.forEach(pack -> this.selected.put(this.id(pack), pack));
 		}
 		this.refreshList();
 		this.updateDownloadButton();
@@ -162,9 +199,10 @@ public class VanillaTweaksScreen extends DownloadScreen<VanillaTweaks.VtPack> {
 		}
 	}
 
+	/** Data packs and crafting tweaks can share names, and both can be picked at once, so their ids say which they are. */
 	@Override
 	protected String id(final VanillaTweaks.VtPack pack) {
-		return pack.id();
+		return pack.kind() == VanillaTweaks.Kind.RESOURCE_PACKS ? pack.id() : pack.kind().name() + ":" + pack.id();
 	}
 
 	@Override
@@ -184,12 +222,14 @@ public class VanillaTweaksScreen extends DownloadScreen<VanillaTweaks.VtPack> {
 
 	@Override
 	protected List<String> imageUrls(final VanillaTweaks.VtPack pack) {
-		return List.of(VanillaTweaks.previewUrl(pack));
+		String preview = VanillaTweaks.previewUrl(pack);
+		return preview == null ? List.of() : List.of(preview);
 	}
 
 	@Override
 	protected Component details(final VanillaTweaks.VtPack pack) {
 		MutableComponent text = Component.literal(pack.description());
+		List<VanillaTweaks.VtPack> packs = PACKS.get(pack.kind());
 		if (!pack.incompatible().isEmpty() && packs != null) {
 			Map<String, String> names = new HashMap<>();
 			packs.forEach(other -> names.put(other.id(), other.display()));

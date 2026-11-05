@@ -10,7 +10,9 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.packs.PackSelectionScreen;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.contents.TranslatableContents;
 import net.minecraft.resources.Identifier;
 
 public class TweakSwitch implements ClientModInitializer {
@@ -22,6 +24,10 @@ public class TweakSwitch implements ClientModInitializer {
 	/** Packs dropped here get a switch in the TweakSwitch screen. */
 	public static Path packsDir() {
 		return FabricLoader.getInstance().getGameDir().resolve(MOD_ID).resolve("packs");
+	}
+
+	private static boolean isDataPackScreen(final Screen screen) {
+		return screen.getTitle().getContents() instanceof TranslatableContents title && title.getKey().equals("dataPack.title");
 	}
 
 	@Override
@@ -36,9 +42,9 @@ public class TweakSwitch implements ClientModInitializer {
 			}
 		});
 
-		// Shortcut from the vanilla Resource Packs screen
+		// Shortcut from the vanilla Resource Packs screen (not the Data Packs one, which uses the same screen class)
 		ScreenEvents.AFTER_INIT.register((minecraft, screen, width, height) -> {
-			if (screen instanceof PackSelectionScreen) {
+			if (screen instanceof PackSelectionScreen && !isDataPackScreen(screen)) {
 				Compat.screenWidgets(screen).add(Button.builder(Component.translatable("tweakswitch.title"), button -> {
 					screen.onClose();
 					Compat.setScreen(minecraft, new TweakSwitchScreen(Compat.screen(minecraft)));

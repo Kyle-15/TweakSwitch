@@ -134,9 +134,24 @@ public abstract class DownloadScreen<T> extends PackListScreen {
 		return button.highlightWhen(picked);
 	}
 
+	/** Where downloads go: the TweakSwitch folder, or a new world's data pack folder. */
+	protected Path targetFolder() {
+		return TweakSwitch.packsDir();
+	}
+
+	/** Whether downloads are recorded in {@link PackIndex}, which only covers the TweakSwitch resource pack folder. */
+	protected boolean indexed() {
+		return true;
+	}
+
+	/** The second line of the "Downloaded 3 packs" message. */
+	protected Component doneHint() {
+		return Component.translatable("tweakswitch.doneHint");
+	}
+
 	protected Set<String> downloadedFiles() {
 		Set<String> names = new HashSet<>();
-		try (Stream<Path> files = Files.list(TweakSwitch.packsDir())) {
+		try (Stream<Path> files = Files.list(this.targetFolder())) {
 			files.forEach(file -> names.add(file.getFileName().toString()));
 		} catch (Exception e) {
 			// Folder doesn't exist yet: nothing downloaded
@@ -171,7 +186,8 @@ public abstract class DownloadScreen<T> extends PackListScreen {
 
 	private void download(final List<T> queue) {
 		queue.forEach(pack -> this.selected.remove(this.id(pack)));
-		Path folder = TweakSwitch.packsDir();
+		Path folder = this.targetFolder();
+		boolean indexed = this.indexed();
 		progress = Component.translatable("tweakswitch.progress", 0, queue.size()).getString();
 		this.updateDownloadButton();
 
@@ -188,7 +204,9 @@ public abstract class DownloadScreen<T> extends PackListScreen {
 				try {
 					Files.createDirectories(folder);
 					this.download(pack, folder);
-					PackIndex.put(this.fileName(pack), this.indexEntry(pack).withTitle(this.switchTitle(pack)));
+					if (indexed) {
+						PackIndex.put(this.fileName(pack), this.indexEntry(pack).withTitle(this.switchTitle(pack)));
+					}
 					succeeded.add(pack);
 				} catch (Exception e) {
 					LOGGER.warn("Failed to download pack {}", this.id(pack), e);
@@ -212,7 +230,7 @@ public abstract class DownloadScreen<T> extends PackListScreen {
 					Compat.toasts(this.minecraft),
 					SystemToast.SystemToastId.PERIODIC_NOTIFICATION,
 					Component.translatable(done == 1 ? "tweakswitch.doneOne" : "tweakswitch.done", done),
-					failures > 0 ? Component.translatable("tweakswitch.someFailed", failures).withStyle(ChatFormatting.RED) : Component.translatable("tweakswitch.doneHint")
+					failures > 0 ? Component.translatable("tweakswitch.someFailed", failures).withStyle(ChatFormatting.RED) : this.doneHint()
 				);
 				this.afterDownload(succeeded);
 				this.refreshIfShown();
