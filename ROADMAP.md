@@ -4,6 +4,9 @@ Ideas for future versions, roughly in the order they'd help most. Tick them off 
 
 ## Next up
 
+- [ ] **Previews on by default.** New players see the hover info (what a pack does, what it conflicts with, its /trigger command) without knowing about Shift. Players who already turned them off keep their choice.
+- [ ] **Clickable Preview button.** The "⇧ Preview" label in the header becomes a button that turns previews on or off, as well as Shift.
+- [ ] **"Tap Shift for info" hint.** A small line on the download and switch screens while previews are off, so people know the info box exists.
 - [x] **Sharper previews.** Pictures are decoded at the size they're shown on screen, resized smoothly, drawn with smooth scaling, and Modrinth uses full-size gallery pictures. (1.2.0)
 - [x] **Smaller UI.** One-row header (title, search, buttons), 16 px buttons, 22 px switch cards, two-line Modrinth cards, smaller Vanilla Tweaks tiles. (1.2.0)
 - [ ] **UI size option** (Compact / Normal) so the bigger look stays available.
