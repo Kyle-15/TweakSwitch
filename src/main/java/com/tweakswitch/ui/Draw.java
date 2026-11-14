@@ -28,6 +28,23 @@ public final class Draw {
 		roundRect(graphics, x + 1, y + 1, width - 2, height - 2, Math.max(0, radius - 1), fill);
 	}
 
+	/** A one-pixel rounded outline with nothing inside, for keyboard focus. */
+	public static void ring(final Gfx graphics, final int x, final int y, final int width, final int height, final int radius, final int color) {
+		int r = Math.max(1, Math.min(radius, Math.min(width, height) / 2));
+		graphics.fill(x + r, y, x + width - r, y + 1, color);
+		graphics.fill(x + r, y + height - 1, x + width - r, y + height, color);
+		graphics.fill(x, y + r, x + 1, y + height - r, color);
+		graphics.fill(x + width - 1, y + r, x + width, y + height - r, color);
+		for (int i = 0; i < r; i++) {
+			double dy = r - i - 0.5;
+			int inset = r - (int) Math.round(Math.sqrt(r * r - dy * dy));
+			graphics.fill(x + inset, y + i, x + inset + 1, y + i + 1, color);
+			graphics.fill(x + width - inset - 1, y + i, x + width - inset, y + i + 1, color);
+			graphics.fill(x + inset, y + height - i - 1, x + inset + 1, y + height - i, color);
+			graphics.fill(x + width - inset - 1, y + height - i - 1, x + width - inset, y + height - i, color);
+		}
+	}
+
 	public static void circle(final Gfx graphics, final int x, final int y, final int size, final int color) {
 		roundRect(graphics, x, y, size, size, size / 2, color);
 	}

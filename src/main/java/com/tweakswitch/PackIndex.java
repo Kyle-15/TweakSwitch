@@ -9,6 +9,7 @@ import com.mojang.logging.LogUtils;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import org.jspecify.annotations.Nullable;
@@ -28,13 +29,18 @@ public final class PackIndex {
 	 * @param source {@link #VANILLA_TWEAKS} or {@link #MODRINTH}; id is that site's id for the pack
 	 * @param title  the pack's real name, which file names can't always hold (e.g. a ":")
 	 */
-	public record Entry(String category, @Nullable String source, @Nullable String id, @Nullable String title) {
+	public record Entry(String category, @Nullable String source, @Nullable String id, @Nullable String title, @Nullable List<String> conflicts) {
 		public Entry(final String category, final @Nullable String source, final @Nullable String id) {
-			this(category, source, id, null);
+			this(category, source, id, null, null);
 		}
 
 		public Entry withTitle(final String title) {
-			return new Entry(this.category, this.source, this.id, title);
+			return new Entry(this.category, this.source, this.id, title, this.conflicts);
+		}
+
+		/** @param conflicts ids of Vanilla Tweaks packs this one clashes with, for the warning when both are switched on */
+		public Entry withConflicts(final List<String> conflicts) {
+			return new Entry(this.category, this.source, this.id, this.title, conflicts.isEmpty() ? null : List.copyOf(conflicts));
 		}
 	}
 
@@ -63,6 +69,18 @@ public final class PackIndex {
 	public static synchronized void put(final String fileName, final Entry entry) {
 		Map<String, Entry> map = load();
 		map.put(fileName, entry);
+		write(map);
+	}
+
+	/** Forgets a file, when its pack is deleted. */
+	public static synchronized void remove(final String fileName) {
+		Map<String, Entry> map = load();
+		if (map.remove(fileName) != null) {
+			write(map);
+		}
+	}
+
+	private static void write(final Map<String, Entry> map) {
 		JsonObject json = new JsonObject();
 		map.forEach((name, value) -> json.add(name, GSON.toJsonTree(value)));
 		try {

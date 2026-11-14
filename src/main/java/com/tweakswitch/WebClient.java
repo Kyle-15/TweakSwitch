@@ -49,11 +49,25 @@ public final class WebClient {
 		send(request(uri).GET(), HttpResponse.BodyHandlers.ofFile(file, StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING));
 	}
 
-	private static <T> T send(final HttpRequest.Builder request, final HttpResponse.BodyHandler<T> handler) throws IOException, InterruptedException {
-		HttpResponse<T> response = HTTP.send(request.build(), handler);
-		if (response.statusCode() != 200) {
-			throw new IOException("HTTP " + response.statusCode() + " for " + response.uri());
+	/** How many times a request is sent before giving up, when the site says it's busy or rate-limiting. */
+	private static final int MAX_ATTEMPTS = 3;
+
+	/**
+	 * Sends the request. If the site answers "too many requests" (429) or that it's busy (502 to 504), waits as long as it
+	 * asks (20 seconds at most) and tries again, so a burst of lookups slows down instead of failing.
+	 */
+	private static <T> T send(final HttpRequest.Builder builder, final HttpResponse.BodyHandler<T> handler) throws IOException, InterruptedException {
+		HttpRequest request = builder.build();
+		for (int attempt = 1; ; attempt++) {
+			HttpResponse<T> response = HTTP.send(request, handler);
+			int status = response.statusCode();
+			if (status == 200) {
+				return response.body();
+			}
+			if (attempt >= MAX_ATTEMPTS || !WebErrors.retryable(status)) {
+				throw new WebErrors.HttpStatusException(status, response.uri());
+			}
+			Thread.sleep(WebErrors.retryDelayMs(status, response.headers().firstValue("Retry-After"), response.headers().firstValue("X-Ratelimit-Reset"), attempt));
 		}
-		return response.body();
 	}
 }

@@ -18,14 +18,12 @@ public class ThemedButton extends BridgePlainButton {
 		SECONDARY
 	}
 
-	public static final int HEIGHT = 16;
-
 	private final Theme theme;
 	private final Kind kind;
 	private BooleanSupplier highlighted = () -> false;
 
 	public ThemedButton(final Theme theme, final Kind kind, final Component message, final int width, final OnPress onPress) {
-		super(0, 0, width, HEIGHT, message, onPress);
+		super(0, 0, width, Ui.button(), message, onPress);
 		this.theme = theme;
 		this.kind = kind;
 	}
@@ -70,6 +68,10 @@ public class ThemedButton extends BridgePlainButton {
 		} else {
 			Draw.roundRectOutlined(graphics, this.getX(), this.getY(), this.getWidth(), this.getHeight(), 3, fill,
 				highlight || this.isHoveredOrFocused() ? this.theme.accent() : this.theme.border());
+		}
+		if (this.isFocused()) {
+			// Keyboard focus: a white ring, visible on the accent-filled buttons too
+			Draw.ring(graphics, this.getX(), this.getY(), this.getWidth(), this.getHeight(), 3, 0xFFFFFFFF);
 		}
 		Font font = Minecraft.getInstance().font;
 		String label = Draw.fit(font, this.getMessage().getString(), this.getWidth() - 8);

@@ -43,6 +43,8 @@ public abstract class DownloadScreen<T> extends PackListScreen {
 	/** Which pack each row button in the list belongs to, for the hover preview. */
 	private final Map<AbstractWidget, T> rows = new HashMap<>();
 	private @Nullable Button downloadButton;
+	/** The batch status the download button last showed, to notice a batch that another screen started or finished. */
+	private @Nullable String shownProgress;
 
 	protected DownloadScreen(final @Nullable Screen lastScreen, final Component title) {
 		super(lastScreen, title);
@@ -93,6 +95,7 @@ public abstract class DownloadScreen<T> extends PackListScreen {
 	}
 
 	protected void updateDownloadButton() {
+		this.shownProgress = progress;
 		if (this.downloadButton != null) {
 			this.downloadButton.setMessage(progress != null ? Component.literal(progress) : Component.translatable(this.downloadLabelKey(), this.selected.size()));
 			this.downloadButton.active = progress == null && !this.selected.isEmpty();
@@ -268,6 +271,22 @@ public abstract class DownloadScreen<T> extends PackListScreen {
 		}, "TweakSwitch downloads");
 		thread.setDaemon(true);
 		thread.start();
+	}
+
+	/**
+	 * Keeps the download button in step with a batch another screen started: the data pack window's tabs are separate
+	 * screens, and a batch started on one tab finishes while another is showing.
+	 */
+	@Override
+	public void tick() {
+		super.tick();
+		if (!java.util.Objects.equals(progress, this.shownProgress)) {
+			this.updateDownloadButton();
+			if (progress == null) {
+				// The batch just finished: its packs now count as downloaded here too
+				this.refreshList();
+			}
+		}
 	}
 
 	protected void refreshIfShown() {

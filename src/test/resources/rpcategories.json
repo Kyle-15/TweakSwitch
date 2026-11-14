@@ -1,0 +1,38 @@
+{
+	"categories": [
+		{
+			"category": "Aesthetic",
+			"packs": [
+				{
+					"name": "BlackNetherBricks",
+					"display": "Black Nether Bricks",
+					"version": "1.0.0",
+					"description": "Makes nether bricks black.<br>Looks great with <b>blackstone</b> &amp; basalt.",
+					"incompatible": []
+				},
+				{
+					"name": "CherryPicking",
+					"display": "Cherry Picking",
+					"description": "Cherries on cakes.",
+					"incompatible": ["OtherCake"],
+					"previewExtension": "gif"
+				}
+			],
+			"categories": [
+				{
+					"category": "LGBTQ+ Pride",
+					"warning": {"text": "Needs <i>OptiFine</i> or a mod like it", "color": "red"},
+					"packs": [
+						{"name": "PrideXpBar", "display": "Pride XP Bar", "description": "", "incompatible": ["OtherBar", "ThirdBar"]}
+					]
+				}
+			]
+		},
+		{
+			"category": "Utility",
+			"packs": [
+				{"name": "armor statues", "display": "Armor: Statues?", "description": "Poses.", "incompatible": []}
+			]
+		}
+	]
+}

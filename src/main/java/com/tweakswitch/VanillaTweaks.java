@@ -15,6 +15,7 @@ import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -82,11 +83,89 @@ public final class VanillaTweaks {
 		return fetchPacks(Kind.RESOURCE_PACKS);
 	}
 
+	/** How long a saved pack list is used before asking the site again. */
+	private static final Duration LIST_MAX_AGE = Duration.ofHours(12);
+
+	private static String listUrl(final Kind kind) {
+		return BASE + "/assets/resources/json/" + siteVersion() + "/" + kind.list + ".json";
+	}
+
 	public static List<VtPack> fetchPacks(final Kind kind) throws IOException, InterruptedException {
-		String body = WebClient.getString(URI.create(BASE + "/assets/resources/json/" + siteVersion() + "/" + kind.list + ".json"));
+		return fetchPacks(kind, false);
+	}
+
+	/**
+	 * The site's pack list. It's saved on disk, so the picker opens straight away and still works offline.
+	 *
+	 * @param refresh true asks the site even if the saved list is recent
+	 */
+	public static List<VtPack> fetchPacks(final Kind kind, final boolean refresh) throws IOException, InterruptedException {
+		return parsePacks(ListCache.get(listUrl(kind), LIST_MAX_AGE, refresh), kind);
+	}
+
+	/** The list as saved the last time it was fetched, or null. Never goes online. */
+	public static @Nullable List<VtPack> savedPacks(final Kind kind) {
+		String body = ListCache.saved(listUrl(kind));
+		try {
+			return body == null ? null : parsePacks(body, kind);
+		} catch (RuntimeException e) {
+			return null;
+		}
+	}
+
+	/** Whether the last list for this kind was an old saved copy because the site couldn't be reached. */
+	public static boolean listIsStale(final Kind kind) {
+		return ListCache.wasStale(listUrl(kind));
+	}
+
+	/** Reads the site's category file (rpcategories.json and friends) into a flat list of packs. */
+	public static List<VtPack> parsePacks(final String body, final Kind kind) {
 		List<VtPack> packs = new ArrayList<>();
 		collect(JsonParser.parseString(body).getAsJsonObject().getAsJsonArray("categories"), "", "", null, kind, packs);
 		return packs;
+	}
+
+	/** The file inside a combined Vanilla Tweaks zip that lists the tweaks it was built from. */
+	private static final String SELECTED_PACKS = "Selected Packs.txt";
+
+	/**
+	 * The ids of the tweaks inside a combined zip downloaded from the Vanilla Tweaks website, or an empty list if the file
+	 * isn't one (or holds a single tweak). TweakSwitch's own one-tweak downloads have no such list.
+	 */
+	public static List<String> combinedPackIds(final Path zip) {
+		if (!Files.isRegularFile(zip) || !zip.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".zip")) {
+			return List.of();
+		}
+		try (FileSystem fs = FileSystems.newFileSystem(zip)) {
+			Path list = fs.getPath(SELECTED_PACKS);
+			if (!Files.exists(list)) {
+				return List.of();
+			}
+			List<String> ids = parseSelectedPacks(Files.readString(list));
+			return ids.size() >= 2 ? ids : List.of();
+		} catch (Exception e) {
+			return List.of();
+		}
+	}
+
+	/**
+	 * Reads "Selected Packs.txt": a few header lines, then one indented pack id per line after "Packs:". Older zips put a
+	 * category name with a colon above each group; those lines are skipped.
+	 */
+	public static List<String> parseSelectedPacks(final String text) {
+		List<String> ids = new ArrayList<>();
+		boolean inPacks = false;
+		for (String line : text.split("\\R")) {
+			String trimmed = line.strip();
+			if (!inPacks) {
+				inPacks = trimmed.equalsIgnoreCase("Packs:");
+				continue;
+			}
+			if (!trimmed.isEmpty() && !trimmed.endsWith(":") && !ids.contains(trimmed)) {
+				ids.add(trimmed);
+			}
+		}
+		return ids;
 	}
 
 	/** @param parentWarning the site's warning on the nearest enclosing category, e.g. that packs need OptiFine-like mods */
@@ -216,11 +295,21 @@ public final class VanillaTweaks {
 		}
 	}
 
-	/** Every download says "Vanilla Tweaks 26.1 - 26.3"; swap in the pack's own description so the switch tooltip is useful. */
-	private static void setDescription(final Path zip, final String description) throws IOException {
-		if (description.isEmpty()) {
-			return;
-		}
+	/** Kept at the end of every downloaded pack's description, so the packs always say where they came from. */
+	public static final String CREDIT = "Vanilla Tweaks \u00b7 vanillatweaks.net";
+
+	/** The description a downloaded pack gets: the tweak's own, then the Vanilla Tweaks credit. */
+	public static String describe(final String packDescription) {
+		String own = packDescription.strip();
+		return own.isEmpty() ? CREDIT : own + "\n" + CREDIT;
+	}
+
+	/**
+	 * Every download says "Vanilla Tweaks 26.1 - 26.3"; swap in the pack's own description so the switch tooltip is useful,
+	 * and keep the Vanilla Tweaks credit after it.
+	 */
+	private static void setDescription(final Path zip, final String packDescription) throws IOException {
+		String description = describe(packDescription);
 		try (FileSystem fs = FileSystems.newFileSystem(zip)) {
 			Path mcmeta = fs.getPath("pack.mcmeta");
 			if (!Files.exists(mcmeta)) {

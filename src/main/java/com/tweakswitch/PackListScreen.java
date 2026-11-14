@@ -15,6 +15,11 @@ import net.minecraft.util.FormattedCharSequence;
 import com.tweakswitch.ui.SectionHeader;
 import com.tweakswitch.ui.Theme;
 import com.tweakswitch.ui.ThemedButton;
+import com.tweakswitch.ui.Ui;
+import net.minecraft.client.gui.components.events.ContainerEventHandler;
+import net.minecraft.client.gui.components.events.GuiEventListener;
+import net.minecraft.client.resources.sounds.SimpleSoundInstance;
+import net.minecraft.sounds.SoundEvents;
 import com.tweakswitch.render.BridgeScreen;
 import com.tweakswitch.render.Gfx;
 import net.minecraft.client.gui.components.AbstractWidget;
@@ -33,8 +38,8 @@ import org.jspecify.annotations.Nullable;
  * bottom. Everything shrinks to fit narrow windows.
  */
 public abstract class PackListScreen extends BridgeScreen {
-	/** The preview panel's width in GUI pixels; pictures are decoded to fit it sharply. */
-	public static final int PREVIEW_WIDTH = 160;
+	/** The widest the preview panel gets in GUI pixels (the "Large" setting); pictures are decoded to fit it sharply. */
+	public static final int PREVIEW_WIDTH = 200;
 	/** Compact: title, search box and any extra buttons share one row; tabs, if any, go in a second row under it. */
 	private static final int HEADER_HEIGHT = 28;
 	private static final int HEADER_WITH_TABS_HEIGHT = 48;
@@ -67,8 +72,11 @@ public abstract class PackListScreen extends BridgeScreen {
 	private @Nullable EditBox search;
 	private @Nullable StringWidget titleWidget;
 	private final List<AbstractWidget> headerExtras = new ArrayList<>();
-	/** Whether the "⇧ Preview" hint fits in the header beside everything else. */
+	/** Whether the "⇧ Preview" button fits in the header beside everything else. */
 	private boolean hintFits;
+	/** Where the "⇧ Preview" button and the "Tap Shift" line were drawn last frame, for clicks; width 0 when not drawn. */
+	private final int[] previewButtonBounds = new int[4];
+	private final int[] shiftHintBounds = new int[4];
 	/** The header row's layout settings, kept so its right padding can make room for the hint. */
 	private @Nullable LayoutSettings headerSettings;
 	private final List<AbstractWidget> footerWidgets = new ArrayList<>();
@@ -76,6 +84,9 @@ public abstract class PackListScreen extends BridgeScreen {
 	private boolean refreshQueued;
 	/** True from a Shift press until another key or click; a release while still true counts as a Shift tap. */
 	private boolean shiftTapped;
+	/** The focused row's top and bottom when the preview is for keyboard focus, so the panel doesn't cover it; top is -1 otherwise. */
+	private int focusedTop = -1;
+	private int focusedBottom;
 	// Preview panel state: which item is hovered, since when, and which of its pictures is showing
 	private @Nullable Object previewKey;
 	private long hoverStart;
@@ -89,7 +100,15 @@ public abstract class PackListScreen extends BridgeScreen {
 
 	/** The colors this screen is drawn in. */
 	protected Theme theme() {
-		return Theme.HOME;
+		return this.homeTheme;
+	}
+
+	/** The accent picked in Settings when this screen opened; a changed setting shows on the next screen opened. */
+	private final Theme homeTheme = Theme.home();
+
+	/** The gray text in an empty search box. */
+	protected Component searchHint() {
+		return Component.translatable("tweakswitch.search");
 	}
 
 	/** The title as shown in the header; screens can restyle it. */
@@ -105,8 +124,8 @@ public abstract class PackListScreen extends BridgeScreen {
 	@Override
 	protected void init() {
 		List<AbstractWidget> tabs = this.createTabs();
-		this.layout.setHeaderHeight(tabs.isEmpty() ? HEADER_HEIGHT : HEADER_WITH_TABS_HEIGHT);
-		this.layout.setFooterHeight(FOOTER_HEIGHT);
+		this.layout.setHeaderHeight((tabs.isEmpty() ? HEADER_HEIGHT : HEADER_WITH_TABS_HEIGHT + Ui.barExtra()) + Ui.barExtra());
+		this.layout.setFooterHeight(FOOTER_HEIGHT + Ui.barExtra());
 		if (this.hasSearch()) {
 			LinearLayout column = this.layout.addToHeader(LinearLayout.vertical().spacing(4));
 			// Centered, with right padding reserved for the "⇧ Preview" hint (sized in repositionElements) so it's centered too
@@ -117,11 +136,11 @@ public abstract class PackListScreen extends BridgeScreen {
 			header.defaultCellSetting().alignVerticallyMiddle();
 			this.titleWidget = header.addChild(new StringWidget(this.styledTitle(), this.font));
 			String previousSearch = this.search != null ? this.search.getValue() : "";
-			this.search = header.addChild(new EditBox(this.font, 0, 0, SEARCH_WIDTH, SEARCH_HEIGHT, Component.translatable("tweakswitch.search")));
+			this.search = header.addChild(new EditBox(this.font, 0, 0, SEARCH_WIDTH, SEARCH_HEIGHT, this.searchHint()));
 			// Drawn on our own rounded box (see extractBackground) instead of vanilla's black field
 			this.search.setBordered(false);
 			this.search.setTextColor(this.theme().text());
-			this.search.setHint(Component.translatable("tweakswitch.search").withColor(this.theme().muted()));
+			this.search.setHint(this.searchHint().copy().withColor(this.theme().muted()));
 			this.search.setValue(previousSearch);
 			this.search.setResponder(value -> {
 				this.refreshList();
@@ -245,25 +264,54 @@ public abstract class PackListScreen extends BridgeScreen {
 
 	@Override
 	public boolean keyReleased(final KeyEvent event) {
-		if (isShift(event.key()) && this.shiftTapped) {
-			Settings settings = Settings.get();
-			settings.previews = !settings.previews;
-			settings.save();
+		if (isShift(event.key()) && this.shiftTapped && this.hasPreviews()) {
+			togglePreviews();
 		}
 		this.shiftTapped = false;
 		return super.keyReleased(event);
 	}
 
+	/** Flips the hover previews and remembers the choice. */
+	public static void togglePreviews() {
+		Settings settings = Settings.get();
+		settings.previews = !settings.previews;
+		settings.save();
+	}
+
+	private static boolean inside(final int[] bounds, final double x, final double y) {
+		return bounds[2] > 0 && x >= bounds[0] && x < bounds[0] + bounds[2] && y >= bounds[1] && y < bounds[1] + bounds[3];
+	}
+
+	/** A click on the header's "⇧ Preview" button, or on the "Tap Shift" line, does what a Shift tap does. */
 	@Override
 	public boolean mouseClicked(final MouseButtonEvent event, final boolean doubleClick) {
 		this.shiftTapped = false;
+		if (event.button() == 0 && this.hasPreviews() && (inside(this.previewButtonBounds, event.x(), event.y()) || inside(this.shiftHintBounds, event.x(), event.y()))) {
+			togglePreviews();
+			this.minecraft.getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
+			return true;
+		}
 		return super.mouseClicked(event, doubleClick);
 	}
 
 	@Override
 	protected void drawOverlay(final Gfx graphics, final int mouseX, final int mouseY, final float a) {
-		this.drawPreviewHint(graphics);
+		this.drawPreviewHint(graphics, mouseX, mouseY);
+		this.drawShiftHint(graphics, mouseX, mouseY);
 		AbstractWidget hovered = this.hoveredListWidget(mouseX, mouseY);
+		int anchorX = mouseX;
+		int anchorY = mouseY;
+		this.focusedTop = -1;
+		// Moving through the list with Tab or the arrow keys previews the focused pack, as hovering would. While the
+		// keyboard is in use it wins over a mouse that happens to be resting on another row.
+		AbstractWidget focused = this.minecraft.getLastInputType().isKeyboard() ? this.focusedListWidget() : null;
+		if (focused != null) {
+			hovered = focused;
+			anchorX = focused.getX() + focused.getWidth() / 2;
+			anchorY = focused.getY() + focused.getHeight() / 2;
+			this.focusedTop = focused.getY();
+			this.focusedBottom = focused.getBottom();
+		}
 		Preview preview = hovered != null && this.hasPreviews() && previewsOn() ? this.previewFor(hovered) : null;
 		long now = System.currentTimeMillis();
 		Object key = preview != null ? preview.key() : null;
@@ -273,21 +321,63 @@ public abstract class PackListScreen extends BridgeScreen {
 			this.imageIndex = 0;
 			this.imageStart = now;
 		}
-		if (preview == null) {
-			return;
+		if (preview != null) {
+			RemoteImages.Image image = this.currentImage(preview.imageUrls(), now);
+			// Like a tooltip, wait a moment so the panel doesn't flash up while the mouse just passes over the list
+			if (now - this.hoverStart >= HOVER_DELAY_MS) {
+				this.drawPreviewPanel(graphics, preview, image, now, anchorX, anchorY);
+			}
 		}
-		RemoteImages.Image image = this.currentImage(preview.imageUrls(), now);
-		// Like a tooltip, wait a moment so the panel doesn't flash up while the mouse just passes over the list
-		if (now - this.hoverStart >= HOVER_DELAY_MS) {
-			this.drawPreviewPanel(graphics, preview, image, now, mouseX, mouseY);
+		this.drawPopups(graphics, mouseX, mouseY);
+	}
+
+	/** Anything a screen draws above everything else, like a right-click menu. */
+	protected void drawPopups(final Gfx graphics, final int mouseX, final int mouseY) {
+	}
+
+	/** The list widget that has keyboard focus, or null. */
+	protected @Nullable AbstractWidget focusedListWidget() {
+		if (this.list == null || this.getFocused() != this.list) {
+			return null;
 		}
+		GuiEventListener focused = this.list;
+		while (focused instanceof ContainerEventHandler container) {
+			focused = container.getFocused();
+		}
+		return focused instanceof AbstractWidget widget ? widget : null;
 	}
 
 	/**
-	 * "⇧ Preview" in the header's right corner, lit in the accent color while previews are on, so the Shift toggle can be
-	 * found. Left out when the window is too narrow for it.
+	 * While previews are off: a small "Tap Shift for pack info" line at the bottom of the list, so the info box can be
+	 * found. Clicking it turns previews on too.
 	 */
-	private void drawPreviewHint(final Gfx graphics) {
+	private void drawShiftHint(final Gfx graphics, final int mouseX, final int mouseY) {
+		this.shiftHintBounds[2] = 0;
+		if (!this.hasPreviews() || previewsOn()) {
+			return;
+		}
+		String text = Component.translatable("tweakswitch.shiftHint").getString();
+		int width = this.font.width(text) + 12;
+		if (width > this.width - 8) {
+			return;
+		}
+		int x = (this.width - width) / 2;
+		int y = this.height - this.layout.getFooterHeight() - 15;
+		this.shiftHintBounds[0] = x;
+		this.shiftHintBounds[1] = y;
+		this.shiftHintBounds[2] = width;
+		this.shiftHintBounds[3] = 12;
+		boolean hovered = inside(this.shiftHintBounds, mouseX, mouseY);
+		Draw.roundRectOutlined(graphics, x, y, width, 12, 6, this.theme().bar(), hovered ? this.theme().accent() : this.theme().border());
+		graphics.text(this.font, text, x + 6, y + 2, hovered ? this.theme().text() : this.theme().muted(), false);
+	}
+
+	/**
+	 * "⇧ Preview" in the header's right corner: a small button, filled with the accent color while previews are on. A click
+	 * flips them, the same as tapping Shift. Left out when the window is too narrow for it.
+	 */
+	private void drawPreviewHint(final Gfx graphics, final int mouseX, final int mouseY) {
+		this.previewButtonBounds[2] = 0;
 		if (!this.hasPreviews() || !this.hintFits) {
 			return;
 		}
@@ -299,10 +389,19 @@ public abstract class PackListScreen extends BridgeScreen {
 		}
 		int x = Math.min(rowRight + HEADER_GAP + 4, this.width - this.font.width(PREVIEW_HINT) - 8);
 		int y = this.search != null ? this.search.getY() + (this.search.getHeight() - 8) / 2 : (this.layout.getHeaderHeight() - 8) / 2;
+		this.previewButtonBounds[0] = x - 4;
+		this.previewButtonBounds[1] = y - 3;
+		this.previewButtonBounds[2] = this.font.width(PREVIEW_HINT) + 8;
+		this.previewButtonBounds[3] = 14;
+		boolean hovered = inside(this.previewButtonBounds, mouseX, mouseY);
 		if (on) {
-			Draw.roundRect(graphics, x - 4, y - 3, this.font.width(PREVIEW_HINT) + 8, 14, 7, this.theme().accent());
+			Draw.roundRect(graphics, x - 4, y - 3, this.font.width(PREVIEW_HINT) + 8, 14, 7, hovered ? Draw.lighten(this.theme().accent(), 0.15F) : this.theme().accent());
+		} else {
+			// Outlined while off, so it reads as a button and not a label
+			Draw.roundRectOutlined(graphics, x - 4, y - 3, this.font.width(PREVIEW_HINT) + 8, 14, 7, hovered ? this.theme().cardHover() : this.theme().card(),
+				hovered ? this.theme().accent() : this.theme().border());
 		}
-		graphics.text(this.font, PREVIEW_HINT, x, y, on ? this.theme().onAccent() : this.theme().muted(), false);
+		graphics.text(this.font, PREVIEW_HINT, x, y, on ? this.theme().onAccent() : hovered ? this.theme().text() : this.theme().muted(), false);
 	}
 
 	/** Screens whose items can be previewed show the Shift hint. */
@@ -343,7 +442,7 @@ public abstract class PackListScreen extends BridgeScreen {
 		final Gfx graphics, final Preview preview, final RemoteImages.Image image, final long now, final int mouseX, final int mouseY
 	) {
 		Theme theme = this.theme();
-		int panelWidth = Math.min(PREVIEW_WIDTH, this.width / 2 - 2 * PANEL_PADDING - 8);
+		int panelWidth = Math.min(Ui.previewWidth(), this.width / 2 - 2 * PANEL_PADDING - 8);
 		int imageCount = preview.imageUrls().size();
 
 		// Picture area: website picture, or a grid of the pack's own textures
@@ -373,6 +472,11 @@ public abstract class PackListScreen extends BridgeScreen {
 
 		int x = mouseX < this.width / 2 ? this.width - boxWidth - 4 : 4;
 		int y = Math.max(4, Math.min(mouseY - boxHeight / 2, this.height - boxHeight - 4));
+		if (this.focusedTop >= 0) {
+			// For keyboard focus there's no cursor to stay clear of: the panel goes under the focused row, or above it
+			x = this.width - boxWidth - 4;
+			y = this.focusedBottom + 4 + boxHeight <= this.height - 4 ? this.focusedBottom + 4 : Math.max(4, this.focusedTop - boxHeight - 4);
+		}
 
 		graphics.nextStratum();
 		Draw.roundRectOutlined(graphics, x, y, boxWidth, boxHeight, 6, theme.bar(), theme.accent());
@@ -461,10 +565,22 @@ public abstract class PackListScreen extends BridgeScreen {
 				toggled.add(name);
 			}
 			this.queueRefresh();
-		}), SectionHeader.HEIGHT);
+		}), Ui.sectionHeader());
 		if (open) {
 			addRows.run();
 		}
+	}
+
+	/** A failed load: what went wrong in plain words, and a Retry button under it. */
+	protected void addError(final PackList list, final Component message, final Runnable retry) {
+		list.addText(message.copy().withStyle(ChatFormatting.RED));
+		list.addCentered(this.button(Component.translatable("tweakswitch.retry"), 90, button -> retry.run()));
+	}
+
+	/** A note that the list is a saved copy because the site couldn't be reached, with a Retry button. */
+	protected void addStaleNote(final PackList list, final Runnable retry) {
+		list.addText(Component.translatable("tweakswitch.savedCopy").withStyle(ChatFormatting.GOLD));
+		list.addCentered(this.button(Component.translatable("tweakswitch.retry"), 90, button -> retry.run()));
 	}
 
 	/** Refreshes on the next tick, for buttons in the list that would otherwise remove themselves while being clicked. */

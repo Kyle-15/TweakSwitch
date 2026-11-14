@@ -4,53 +4,47 @@ Ideas for future versions, roughly in the order they'd help most. Tick them off 
 
 ## Next up
 
-- [ ] **Previews on by default.** New players see the hover info (what a pack does, what it conflicts with, its /trigger command) without knowing about Shift. Players who already turned them off keep their choice.
-- [ ] **Clickable Preview button.** The "⇧ Preview" label in the header becomes a button that turns previews on or off, as well as Shift.
-- [ ] **"Tap Shift for info" hint.** A small line on the download and switch screens while previews are off, so people know the info box exists.
-- [x] **Sharper previews.** Pictures are decoded at the size they're shown on screen, resized smoothly, drawn with smooth scaling, and Modrinth uses full-size gallery pictures. (1.2.0)
-- [x] **Smaller UI.** One-row header (title, search, buttons), 16 px buttons, 22 px switch cards, two-line Modrinth cards, smaller Vanilla Tweaks tiles. (1.2.0)
-- [ ] **UI size option** (Compact / Normal) so the bigger look stays available.
-- [ ] **Pack order.** Choose which pack wins when two change the same thing, with up/down arrows or drag-to-reorder on the switch cards.
-- [ ] **Conflict warnings.** Warn when switching on two Vanilla Tweaks packs that clash (e.g. two crosshairs) and offer to turn the other one off.
-- [ ] **Vanilla Tweaks credit.** Keep "Vanilla Tweaks · vanillatweaks.net" in downloaded packs' descriptions (the mod currently replaces it). Permission for the downloader: granted.
-
-## Features
-
-- [ ] **Presets.** Save your switches as named sets ("PvP", "Building") and swap between them in one click, optionally with a keybind.
-- [ ] **Split combined Vanilla Tweaks zips.** Read the pack list inside a zip from their website and download each tweak as its own switch.
-- [ ] **Update reminder.** A small popup at startup when packs have updates.
-- [ ] **Delete packs from the screen.** Right-click a card to remove a pack.
-- [ ] **Modrinth filters.** Filter by category (GUI, Blocks, 16x…) and hide packs that need mods.
-- [ ] **Settings page.** Previews on/off, panel size, theme and keybind in one place, opened from Mod Menu.
-- [ ] **Previews on your switches.** Hover a switch to see the same pictures as in the picker.
-
-- [ ] **Sort and pin switches.** Sort by name, recently added or "on first", and pin favorite packs to the top.
-- [ ] **Export / import switches.** Save your pack list and switch states to a file to share with a friend or restore later.
-
-## Reliability
-
-- [ ] **Offline and error handling.** Clear messages and a Retry button when there's no internet or a site is down, instead of a raw error.
-- [ ] **Cache the pack lists on disk** too, like pictures already are, so screens open instantly.
-- [ ] **Back off when rate-limited.** Slow down and retry if Modrinth answers "too many requests" (HTTP 429).
-- [ ] **Survive broken packs.** If a downloaded zip is damaged, show it as broken on its card (with a re-download button) instead of silently skipping it.
-- [ ] **Keyboard and narrator support** for the custom cards, tiles and switches (Tab to move, Enter to toggle, screen reader text).
-
-## Releases and testing
-
-- [ ] **Automatic builds on GitHub.** A GitHub Actions workflow that builds the mod and runs the tests on every push, and attaches the jar to releases.
-- [ ] **Unit tests** for the Vanilla Tweaks and Modrinth parsers, so site changes are caught early.
-- [ ] **Check for TweakSwitch updates** once it's on Modrinth, and show a small "new version available" note.
-- [ ] **Keep the Modrinth page current:** new gallery screenshots whenever the look changes.
-
-## Bigger projects
-
 - [ ] **Minecraft 1.21.1 to 1.21.8.** Older still: the screen and drawing code changed again before 1.21.9.
 - [ ] **26.4** once it's released: add `versions/26.4.properties` and, if needed, a `src/compat/26.4/` file.
-- [ ] **Data packs for existing worlds**, and Modrinth data packs in the same window.
+- [ ] **Data packs for existing worlds.** The data pack window only opens from Create World so far. World generation packs need a warning, since they only affect new chunks.
+- [ ] **Updates for data packs** already added to a world. The Updates screen only covers resource packs.
 - [ ] **Translations** into other languages.
+
+## Smaller things
+
+- [ ] **Reorder by dragging**, and with the keyboard. The Order screen's ▲ and ▼ need the mouse.
+- [ ] **Show which packs overlap** on the Order screen, file by file, instead of just what each pack changes most.
+- [ ] **Move deleted packs to the system trash** instead of deleting them for good.
+- [ ] **Run the in-game test on GitHub** too. Only the build and the unit tests run there; the in-game test needs a screen and downloads real packs.
+- [ ] **Link the "new version" note to Modrinth** once the project page is public. It opens the GitHub release for now.
 
 ## Done
 
+- [x] **Previews on by default,** so the hover info (what a pack does, what it clashes with) shows without knowing about Shift. Anyone upgrading gets them switched on once; turning them off after that sticks (1.5.0)
+- [x] **Clickable "⇧ Preview" button** in the header, as well as Shift (1.5.0)
+- [x] **"Tap Shift for pack info" line** while previews are off (1.5.0)
+- [x] **UI size option:** Compact or Normal, plus preview size and a choice of colors (1.5.0)
+- [x] **Settings page** behind the ⚙ button and Mod Menu (1.5.0)
+- [x] **Pack order:** an Order screen with ▲ and ▼ to choose which pack wins (1.5.0)
+- [x] **Clash warnings** when switching on two Vanilla Tweaks packs that clash, with an offer to turn the other off (1.5.0)
+- [x] **Vanilla Tweaks credit** kept at the end of every downloaded pack's description (1.5.0)
+- [x] **Presets:** named sets of switches, one click to swap, and a key to step through them (1.5.0)
+- [x] **Split combined Vanilla Tweaks zips** into one switch per tweak, from the list inside the zip (1.5.0)
+- [x] **Update reminder** at start-up, once a day at most, with a switch to turn it off (1.5.0)
+- [x] **Delete packs from the screen** with a right-click (1.5.0)
+- [x] **Modrinth filters:** by tag, and hiding packs made for mods (1.5.0)
+- [x] **Sort and pin switches:** by name, newest or on-first, with pinned packs on top (1.5.0)
+- [x] **Export / import switches** as a small file; missing Vanilla Tweaks and Modrinth packs are downloaded on import (1.5.0)
+- [x] **Modrinth data packs** as a third tab of the Create World data pack window (1.5.0)
+- [x] **Offline and error handling:** plain-words messages and a Try Again button (1.5.0)
+- [x] **Pack lists saved on disk,** like pictures, so screens open at once and still show offline (1.5.0)
+- [x] **Back off when rate-limited:** waits as long as the site asks, then tries again (1.5.0)
+- [x] **Survive broken packs:** a damaged zip shows in red with a button to download it again (1.5.0)
+- [x] **Keyboard and narrator support** for the switches, tiles and cards: Tab, Enter, a focus ring, and spoken names with their state (1.5.0)
+- [x] **Automatic builds on GitHub** for every version, with the jars attached to releases (1.5.0)
+- [x] **Unit tests** for the Vanilla Tweaks and Modrinth readers and the other logic that doesn't need the game (1.5.0)
+- [x] **Check for TweakSwitch updates** and show a "new version" note. It asks GitHub, since the Modrinth page isn't public yet (1.5.0)
+- [x] **Previews on your switches:** hover a switch to see the same pictures as in the picker (already there since 1.2.0)
 - [x] **Vanilla Tweaks data packs and crafting tweaks** in their own window on the Create World screen's More tab, switched on for the new world (1.4.0)
 - [x] **Download Mods:** packs that need mods can fetch them from Modrinth into the mods folder, with a note to restart (1.4.0)
 - [x] **Pictures saved on disk** for a week, up to 256 MB (1.4.0)
@@ -58,6 +52,8 @@ Ideas for future versions, roughly in the order they'd help most. Tick them off 
 - [x] **Previews for packs you already have** in the Vanilla Tweaks and Modrinth pickers (1.4.0)
 - [x] **Minecraft 1.21.9, 1.21.10 and 1.21.11:** same features as on 26.x, all passing the in-game test (1.3.0)
 - [x] **Minecraft 26.1, 26.2 and 26.3:** one jar per version family from one codebase, all passing the in-game test (1.2.1)
+- [x] **Sharper previews.** Pictures are decoded at the size they're shown on screen, resized smoothly, drawn with smooth scaling, and Modrinth uses full-size gallery pictures (1.2.0)
+- [x] **Smaller UI.** One-row header (title, search, buttons), 16 px buttons, 22 px switch cards, two-line Modrinth cards, smaller Vanilla Tweaks tiles (1.2.0)
 - [x] **Shift previews** on the TweakSwitch, Vanilla Tweaks and Modrinth screens: tap Shift to turn the preview panel on or off (1.2.0)
 - [x] **See what any pack does:** previews show the textures inside a pack, plus "Changes: Particles (12)…" (1.2.0)
 - [x] **Group switches** by source, by what they change, by on/off, or A–Z (1.2.0)

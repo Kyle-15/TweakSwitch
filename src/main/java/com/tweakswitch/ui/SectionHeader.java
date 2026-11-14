@@ -12,7 +12,6 @@ import org.jspecify.annotations.Nullable;
  * carry a small switch at the right end that turns the whole group on or off.
  */
 public class SectionHeader extends CardButton {
-	public static final int HEIGHT = 14;
 	private static final int SWITCH_WIDTH = 18;
 	private static final int SWITCH_HEIGHT = 9;
 
@@ -27,7 +26,7 @@ public class SectionHeader extends CardButton {
 	private final boolean open;
 
 	public SectionHeader(final Theme theme, final String name, final String count, final boolean open, final @Nullable BulkSwitch bulk, final Runnable toggle) {
-		super(theme, HEIGHT, Component.literal(name), toggle);
+		super(theme, Ui.sectionHeader(), Component.literal(name), toggle);
 		this.bulk = bulk;
 		this.name = name;
 		this.count = count;
@@ -59,6 +58,11 @@ public class SectionHeader extends CardButton {
 		int countWidth = font.width(this.count);
 		graphics.text(font, Draw.fit(font, this.name, right - countWidth - 24 - x), x + 18, textY, this.theme.text(), false);
 		graphics.text(font, this.count, right - countWidth, textY, this.theme.muted(), false);
+	}
+
+	@Override
+	protected Component narratedState() {
+		return Component.translatable(this.open ? "tweakswitch.narration.open" : "tweakswitch.narration.closed", this.count);
 	}
 
 	/** A click on the right end flips the group's switch; anywhere else folds the group. */

@@ -13,6 +13,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
+import java.time.Duration;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -35,6 +36,41 @@ public final class Modrinth {
 	private static final String API = "https://api.modrinth.com/v2";
 	public static final String FILE_PREFIX = "MR - ";
 	public static final int PAGE_SIZE = 30;
+
+	/** The two kinds of project TweakSwitch downloads from Modrinth. Each has its own search, files and website section. */
+	public enum Type {
+		RESOURCE_PACKS("resourcepack", "minecraft", "resourcepacks"),
+		/** Data packs are files published for the "datapack" loader; many of those projects are also mods. */
+		DATA_PACKS("datapack", "datapack", "datapacks");
+
+		final String projectType;
+		/** What Modrinth calls the loader of the files to download. */
+		final String loader;
+		public final URI site;
+
+		Type(final String projectType, final String loader, final String section) {
+			this.projectType = projectType;
+			this.loader = loader;
+			this.site = URI.create("https://modrinth.com/" + section);
+		}
+
+		/** The tags a search can be narrowed to, in the order Modrinth's own filter list shows them. */
+		public List<String> categories() {
+			return this == RESOURCE_PACKS ? RESOURCE_PACK_CATEGORIES : DATA_PACK_CATEGORIES;
+		}
+	}
+
+	private static final List<String> RESOURCE_PACK_CATEGORIES = List.of(
+		"combat", "cursed", "decoration", "realistic", "simplistic", "themed", "tweaks", "utility", "vanilla-like",
+		"audio", "blocks", "core-shaders", "entities", "environment", "equipment", "fonts", "gui", "items", "locale", "models",
+		"8x-", "16x", "32x", "48x", "64x", "128x", "256x", "512x+"
+	);
+	private static final List<String> DATA_PACK_CATEGORIES = List.of(
+		"adventure", "cursed", "decoration", "economy", "equipment", "food", "game-mechanics", "library", "magic", "management", "minigame", "mobs",
+		"optimization", "social", "storage", "technology", "transportation", "utility", "worldgen"
+	);
+	/** Modrinth's tag for resource packs made to go with mods. */
+	public static final String MODDED = "modded";
 
 	public enum Sort {
 		RELEVANCE("relevance"),
@@ -113,6 +149,10 @@ public final class Modrinth {
 	}
 
 	private static final Map<String, Requirements> REQUIREMENTS = new ConcurrentHashMap<>();
+	/** Projects found to have no file of the wanted kind for this Minecraft version, so their cards can say so. */
+	private static final Set<String> NO_VERSION = ConcurrentHashMap.newKeySet();
+	/** How long a saved page of search results is used before asking Modrinth again. */
+	private static final Duration SEARCH_MAX_AGE = Duration.ofMinutes(30);
 	private static final Map<String, List<String>> FULL_IMAGES = new ConcurrentHashMap<>();
 	private static final Set<String> LOADING_IMAGES = ConcurrentHashMap.newKeySet();
 	private static final Set<String> LOADING_REQUIREMENTS = ConcurrentHashMap.newKeySet();
@@ -131,10 +171,58 @@ public final class Modrinth {
 
 	/** One page of resource packs that list this Minecraft version. */
 	public static Page search(final String query, final Sort sort, final int offset) throws IOException, InterruptedException {
-		String facets = "[[\"project_type:resourcepack\"],[\"versions:" + gameVersion() + "\"]]";
-		String url = API + "/search?limit=" + PAGE_SIZE + "&offset=" + offset + "&index=" + sort.index
-			+ "&facets=" + encode(facets) + (query.isBlank() ? "" : "&query=" + encode(query.trim()));
-		JsonObject result = JsonParser.parseString(WebClient.getString(URI.create(url))).getAsJsonObject();
+		return search(Type.RESOURCE_PACKS, query, sort, offset, List.of(), false, false);
+	}
+
+	/**
+	 * One page of projects of that type that list this Minecraft version. Pages are saved on disk for half an hour, so
+	 * reopening the screen is instant and the last results still show offline.
+	 *
+	 * @param categories only projects with all of these tags
+	 * @param hideModded leaves out resource packs tagged as made for mods
+	 * @param refresh    true asks Modrinth even if a saved page is recent
+	 */
+	public static Page search(
+		final Type type, final String query, final Sort sort, final int offset, final Collection<String> categories, final boolean hideModded,
+		final boolean refresh
+	) throws IOException, InterruptedException {
+		return parseSearch(ListCache.get(searchUrl(type, gameVersion(), query, sort, offset, categories, hideModded), SEARCH_MAX_AGE, refresh));
+	}
+
+	/** Whether the last page for this search was an old saved copy because Modrinth couldn't be reached. */
+	public static boolean searchIsStale(final Type type, final String query, final Sort sort, final Collection<String> categories, final boolean hideModded) {
+		return ListCache.wasStale(searchUrl(type, gameVersion(), query, sort, 0, categories, hideModded));
+	}
+
+	static String searchUrl(
+		final Type type, final String gameVersion, final String query, final Sort sort, final int offset, final Collection<String> categories,
+		final boolean hideModded
+	) {
+		return API + "/search?limit=" + PAGE_SIZE + "&offset=" + offset + "&index=" + sort.index
+			+ "&facets=" + encode(facets(type, gameVersion, categories, hideModded)) + (query.isBlank() ? "" : "&query=" + encode(query.trim()));
+	}
+
+	/** Modrinth's search filter: every inner list must match, e.g. [["project_type:datapack"],["versions:26.3"],["categories:worldgen"]]. */
+	public static String facets(final Type type, final String gameVersion, final Collection<String> categories, final boolean hideModded) {
+		JsonArray facets = new JsonArray();
+		List<String> all = new ArrayList<>();
+		all.add("project_type:" + type.projectType);
+		all.add("versions:" + gameVersion);
+		categories.stream().sorted().forEach(category -> all.add("categories:" + category));
+		if (hideModded && type == Type.RESOURCE_PACKS) {
+			all.add("categories!=" + MODDED);
+		}
+		for (String facet : all) {
+			JsonArray group = new JsonArray();
+			group.add(facet);
+			facets.add(group);
+		}
+		return facets.toString();
+	}
+
+	/** Reads a page of Modrinth's search reply. */
+	public static Page parseSearch(final String body) {
+		JsonObject result = JsonParser.parseString(body).getAsJsonObject();
 		List<Project> projects = new ArrayList<>();
 		for (JsonElement element : result.getAsJsonArray("hits")) {
 			JsonObject hit = element.getAsJsonObject();
@@ -142,6 +230,8 @@ public final class Modrinth {
 			if (hit.has("display_categories")) {
 				hit.getAsJsonArray("display_categories").forEach(category -> categories.add(category.getAsString()));
 			}
+			// Loaders are listed with the tags; they say nothing about what a pack does
+			categories.removeAll(LOADER_TAGS);
 			String icon = string(hit, "icon_url");
 			// Featured picture first, then the rest of the gallery; the icon only if there's no gallery
 			List<String> images = new ArrayList<>();
@@ -173,6 +263,11 @@ public final class Modrinth {
 		}
 		return new Page(projects, result.get("total_hits").getAsInt());
 	}
+
+	private static final Set<String> LOADER_TAGS = Set.of(
+		"minecraft", "datapack", "fabric", "forge", "neoforge", "quilt", "bukkit", "spigot", "paper", "purpur", "folia", "sponge", "bungeecord",
+		"velocity", "waterfall", "liteloader", "modloader", "rift", "babric", "legacy-fabric", "nilloader", "ornithe", "bta-babric", "java-agent"
+	);
 
 	/**
 	 * The project's gallery at full size, featured picture first. Search results only carry 350 px thumbnails, so the first
@@ -208,38 +303,61 @@ public final class Modrinth {
 		return project.images();
 	}
 
+	private static String key(final Type type, final String projectId) {
+		return type.name() + ":" + projectId;
+	}
+
 	/** Requirements if already looked up this session, without starting a lookup. */
-	public static @Nullable Requirements knownRequirements(final Project project) {
-		return REQUIREMENTS.get(project.id());
+	public static @Nullable Requirements knownRequirements(final Type type, final Project project) {
+		return REQUIREMENTS.get(key(type, project.id()));
+	}
+
+	/** Whether a lookup found the project has no file of this type for this Minecraft version. */
+	public static boolean hasNoVersion(final Type type, final Project project) {
+		return NO_VERSION.contains(key(type, project.id()));
 	}
 
 	/** Requirements if already looked up this session; otherwise starts looking them up and returns null. */
-	public static @Nullable Requirements cachedRequirements(final Project project) {
-		Requirements requirements = REQUIREMENTS.get(project.id());
-		if (requirements == null && LOADING_REQUIREMENTS.add(project.id())) {
+	public static @Nullable Requirements cachedRequirements(final Type type, final Project project) {
+		String key = key(type, project.id());
+		Requirements requirements = REQUIREMENTS.get(key);
+		if (requirements == null && !NO_VERSION.contains(key) && LOADING_REQUIREMENTS.add(key)) {
 			LOADER.execute(() -> {
 				try {
-					requirements(project);
+					requirements(type, project);
 				} catch (Exception e) {
 					// Shown as unknown; looked up again before downloading
 				} finally {
-					LOADING_REQUIREMENTS.remove(project.id());
+					LOADING_REQUIREMENTS.remove(key);
 				}
 			});
 		}
 		return requirements;
 	}
 
-	/** Looks up the newest version for this game version and the projects it depends on. Cached for the session. */
+	/** Thrown when a project has nothing to download for this Minecraft version. */
+	public static final class NoVersionException extends IOException {
+		public NoVersionException(final String message) {
+			super(message);
+		}
+	}
+
 	public static Requirements requirements(final Project project) throws IOException, InterruptedException {
-		Requirements cached = REQUIREMENTS.get(project.id());
+		return requirements(Type.RESOURCE_PACKS, project);
+	}
+
+	/** Looks up the newest version for this game version and the projects it depends on. Cached for the session. */
+	public static Requirements requirements(final Type type, final Project project) throws IOException, InterruptedException {
+		String key = key(type, project.id());
+		Requirements cached = REQUIREMENTS.get(key);
 		if (cached != null) {
 			return cached;
 		}
-		String url = API + "/project/" + project.id() + "/version?game_versions=" + encode("[\"" + gameVersion() + "\"]") + "&loaders=" + encode("[\"minecraft\"]");
+		String url = API + "/project/" + project.id() + "/version?game_versions=" + encode("[\"" + gameVersion() + "\"]") + "&loaders=" + encode("[\"" + type.loader + "\"]");
 		JsonArray versions = JsonParser.parseString(WebClient.getString(URI.create(url))).getAsJsonArray();
 		if (versions.isEmpty()) {
-			throw new IOException(project.title() + " has no version for Minecraft " + gameVersion());
+			NO_VERSION.add(key);
+			throw new NoVersionException(project.title() + " has no version for Minecraft " + gameVersion());
 		}
 		// Newest first
 		Version version = parseVersion(versions.get(0).getAsJsonObject());
@@ -270,7 +388,7 @@ public final class Modrinth {
 			}
 		}
 		Requirements requirements = new Requirements(version, required, optional);
-		REQUIREMENTS.put(project.id(), requirements);
+		REQUIREMENTS.put(key, requirements);
 		return requirements;
 	}
 
@@ -281,8 +399,13 @@ public final class Modrinth {
 
 	/** Downloads the newest version of the project made for this Minecraft version. */
 	public static Path download(final Project project, final Path folder) throws IOException, InterruptedException {
+		return download(Type.RESOURCE_PACKS, project, folder);
+	}
+
+	public static Path download(final Type type, final Project project, final Path folder) throws IOException, InterruptedException {
 		Path target = folder.resolve(project.fileName());
-		downloadVersion(requirements(project).version(), target);
+		Files.createDirectories(folder);
+		downloadVersion(requirements(type, project).version(), target);
 		return target;
 	}
 
@@ -409,7 +532,7 @@ public final class Modrinth {
 		return map;
 	}
 
-	private static Version parseVersion(final JsonObject version) {
+	public static Version parseVersion(final JsonObject version) {
 		// The primary file, or the first file if none is marked primary
 		JsonObject file = null;
 		for (JsonElement element : version.getAsJsonArray("files")) {

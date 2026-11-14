@@ -69,7 +69,12 @@ public class PackList extends BridgeList<PackList.Entry> {
 
 	/** One widget across the whole row. */
 	public void addRow(final AbstractWidget widget) {
-		this.addRow(widget, ROW_HEIGHT);
+		this.addRow(widget, widget.getHeight());
+	}
+
+	/** One widget at its own width, in the middle of the row. */
+	public void addCentered(final AbstractWidget widget) {
+		this.addEntry(new CenteredRow(widget), widget.getHeight() + 4);
 	}
 
 	/** One widget across the whole row, with room for a widget of the given height. */
@@ -89,7 +94,7 @@ public class PackList extends BridgeList<PackList.Entry> {
 	public void addGrid(final List<? extends AbstractWidget> widgets, final int columns) {
 		int perRow = this.getRowWidth() >= MIN_TWO_COLUMN_WIDTH ? columns : 1;
 		for (int i = 0; i < widgets.size(); i += perRow) {
-			this.addEntry(new WidgetRow(List.copyOf(widgets.subList(i, Math.min(widgets.size(), i + perRow))), perRow, COLUMN_GAP), ROW_HEIGHT);
+			this.addEntry(new WidgetRow(List.copyOf(widgets.subList(i, Math.min(widgets.size(), i + perRow))), perRow, COLUMN_GAP), widgets.get(i).getHeight() + 4);
 		}
 	}
 
@@ -100,6 +105,9 @@ public class PackList extends BridgeList<PackList.Entry> {
 	/** The widget under the mouse, or null. Only counts rows drawn this frame. */
 	public @Nullable AbstractWidget hoveredWidget(final double mouseX, final double mouseY) {
 		Entry entry = this.getHovered();
+		if (entry instanceof CenteredRow centered) {
+			return centered.widget.isMouseOver(mouseX, mouseY) ? centered.widget : null;
+		}
 		if (entry instanceof WidgetRow row) {
 			for (AbstractWidget widget : row.widgets) {
 				// Not isMouseOver: that ignores disabled widgets, like tiles for packs you already have, which still preview
@@ -145,6 +153,31 @@ public class PackList extends BridgeList<PackList.Entry> {
 		@Override
 		public List<? extends NarratableEntry> narratables() {
 			return this.widgets;
+		}
+	}
+
+	private static class CenteredRow extends Entry {
+		private final AbstractWidget widget;
+
+		CenteredRow(final AbstractWidget widget) {
+			this.widget = widget;
+		}
+
+		@Override
+		public void drawContent(final Gfx graphics, final int mouseX, final int mouseY, final boolean hovered, final float a) {
+			this.widget.setX(this.getContentX() + (this.getContentWidth() - this.widget.getWidth()) / 2);
+			this.widget.setY(this.getContentY());
+			graphics.widget(this.widget, mouseX, mouseY, a);
+		}
+
+		@Override
+		public List<? extends GuiEventListener> children() {
+			return List.of(this.widget);
+		}
+
+		@Override
+		public List<? extends NarratableEntry> narratables() {
+			return List.of(this.widget);
 		}
 	}
 

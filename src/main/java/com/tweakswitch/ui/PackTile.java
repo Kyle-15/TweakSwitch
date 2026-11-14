@@ -12,9 +12,9 @@ import java.util.function.Supplier;
 
 /** A Vanilla Tweaks pack as a tile, like on their website: the pack's icon on top, its name below, gray when picked. */
 public class PackTile extends CardButton {
-	public static final int HEIGHT = 50;
 	public static final int MIN_WIDTH = 60;
-	private static final int ICON_SIZE = 20;
+	/** 20 pixels in Compact; Normal's taller tile has room for 28. */
+	private final int iconSize = Ui.normal() ? 28 : 20;
 
 	private final Component name;
 	private final Supplier<@Nullable Identifier> icon;
@@ -25,7 +25,7 @@ public class PackTile extends CardButton {
 		final Theme theme, final Component name, final Supplier<@Nullable Identifier> icon, final BooleanSupplier picked, final boolean downloaded,
 		final Runnable toggle
 	) {
-		super(theme, HEIGHT, name, toggle);
+		super(theme, Ui.tile(), name, toggle);
 		this.name = name;
 		this.icon = icon;
 		this.picked = picked;
@@ -41,6 +41,7 @@ public class PackTile extends CardButton {
 		int fill = isPicked ? this.theme.cardSelected() : hovered ? this.theme.cardHover() : this.theme.card();
 		Draw.roundRect(graphics, x, y, this.getWidth(), this.getHeight(), 4, fill);
 
+		final int ICON_SIZE = this.iconSize;
 		int iconX = x + (this.getWidth() - ICON_SIZE) / 2;
 		int iconY = y + 4;
 		// A dark frame behind the icon, like the site's pack thumbnails
@@ -72,6 +73,12 @@ public class PackTile extends CardButton {
 			Draw.circle(graphics, x + this.getWidth() - 11, y + 2, 9, this.theme.accent());
 			graphics.text(font, "✚", x + this.getWidth() - 9, y + 3, this.theme.onAccent(), false);
 		}
+	}
+
+	@Override
+	protected @Nullable Component narratedState() {
+		return this.downloaded ? Component.translatable("tweakswitch.narration.downloaded")
+			: this.picked.getAsBoolean() ? Component.translatable("tweakswitch.narration.picked") : null;
 	}
 
 	private static int lengthOf(final FormattedCharSequence line) {

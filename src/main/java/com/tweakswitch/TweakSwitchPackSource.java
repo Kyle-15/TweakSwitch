@@ -4,7 +4,12 @@ import com.mojang.logging.LogUtils;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Stream;
 import java.util.Optional;
 import java.util.function.Consumer;
 import net.minecraft.ChatFormatting;
@@ -31,6 +36,14 @@ public class TweakSwitchPackSource implements RepositorySource {
 		description -> Component.translatable("pack.nameAndSource", description, Component.translatable("tweakswitch.source")).withStyle(ChatFormatting.GRAY),
 		false
 	);
+
+	/** Zip files in the folder that couldn't be read as a pack the last time the folder was looked at. */
+	private static volatile List<String> broken = List.of();
+
+	/** File names of zips in the TweakSwitch folder that are damaged or aren't resource packs. */
+	public static List<String> brokenFiles() {
+		return broken;
+	}
 
 	public static boolean isOurs(final Pack pack) {
 		return pack.getId().startsWith(ID_PREFIX);
@@ -63,6 +76,7 @@ public class TweakSwitchPackSource implements RepositorySource {
 		try {
 			Files.createDirectories(folder);
 			Map<String, PackIndex.Entry> index = PackIndex.load();
+			Set<String> readable = new HashSet<>();
 			FolderRepositorySource.discoverPacks(folder, Minecraft.getInstance().directoryValidator(), (content, resources) -> {
 				String fileName = content.getFileName().toString();
 				PackIndex.Entry entry = index.get(fileName);
@@ -71,8 +85,17 @@ public class TweakSwitchPackSource implements RepositorySource {
 				Pack pack = Pack.readMetaAndCreate(location, resources, PackType.CLIENT_RESOURCES, SELECTION_CONFIG);
 				if (pack != null) {
 					result.accept(pack);
+					readable.add(fileName);
 				}
 			});
+			// A half-downloaded or damaged zip gives no pack; it's remembered so the screen can show it instead of hiding it
+			try (Stream<Path> files = Files.list(folder)) {
+				broken = files.filter(Files::isRegularFile)
+					.map(file -> file.getFileName().toString())
+					.filter(name -> name.toLowerCase(Locale.ROOT).endsWith(".zip") && !readable.contains(name))
+					.sorted()
+					.toList();
+			}
 		} catch (IOException e) {
 			LOGGER.warn("Failed to list packs in {}", folder, e);
 		}

@@ -25,7 +25,17 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.tweakswitch.ui.SectionHeader;
+import com.tweakswitch.ui.ActionRow;
+import com.tweakswitch.ui.Draw;
 import com.tweakswitch.ui.SwitchRow;
+import com.tweakswitch.ui.Ui;
+import com.tweakswitch.render.Gfx;
+import com.mojang.blaze3d.platform.InputConstants;
+import net.minecraft.client.gui.screens.ConfirmLinkScreen;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
+import java.net.URI;
+import java.util.concurrent.CopyOnWriteArrayList;
 import com.tweakswitch.ui.ThemedButton;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.network.chat.MutableComponent;
@@ -121,6 +131,48 @@ public class TweakSwitchScreen extends PackListScreen {
 		}
 	}
 
+	/** How switches are ordered inside each group; the "Sort" button beside the tabs cycles through them. */
+	public enum SortBy {
+		NAME("tweakswitch.sort.name"),
+		/** Newest file first. */
+		RECENT("tweakswitch.sort.recent"),
+		/** Switched-on packs first, then by name. */
+		ON_FIRST("tweakswitch.sort.onFirst");
+
+		final String key;
+
+		SortBy(final String key) {
+			this.key = key;
+		}
+
+		static SortBy fromSettings() {
+			try {
+				return valueOf(Settings.get().sortBy);
+			} catch (IllegalArgumentException | NullPointerException e) {
+				return NAME;
+			}
+		}
+	}
+
+	/** A small menu at the mouse, opened by right-clicking a switch. */
+	private record Menu(int x, int y, int width, List<MenuItem> items) {
+		static final int ITEM_HEIGHT = 14;
+
+		int height() {
+			return this.items.size() * ITEM_HEIGHT + 4;
+		}
+
+		int itemAt(final double mouseX, final double mouseY) {
+			if (mouseX < this.x || mouseX >= this.x + this.width || mouseY < this.y + 2 || mouseY >= this.y + 2 + this.items.size() * ITEM_HEIGHT) {
+				return -1;
+			}
+			return (int) ((mouseY - this.y - 2) / ITEM_HEIGHT);
+		}
+	}
+
+	private record MenuItem(Component label, boolean danger, Runnable action) {
+	}
+
 	/** Where each downloaded pack came from, read when the list is built. */
 	private Map<String, PackIndex.Entry> index = Map.of();
 	/** Between a group and its sub-group in "Changes" mode. */
@@ -133,6 +185,17 @@ public class TweakSwitchScreen extends PackListScreen {
 	private final Map<AbstractWidget, Pack> switchRows = new HashMap<>();
 	/** Switch state the player has chosen but not yet applied, by pack id, in the order chosen. */
 	private final Map<String, Boolean> pending = new LinkedHashMap<>();
+	/** The order the switched-on packs should end up in (pack ids, lowest priority first), from an imported file; null for no change. */
+	private @Nullable List<String> wantedOrder;
+	/** True once the pack selection was changed without reloading resources yet; Done reloads. */
+	private boolean dirty;
+	private @Nullable Menu menu;
+	/** Vanilla Tweaks pack id → ids it clashes with, from the list saved by the picker (read in the background). */
+	private static volatile Map<String, List<String>> savedConflicts = Map.of();
+	/** Files that couldn't be deleted because the game still had them open; tried again after resources reload. */
+	private static final List<Path> DELETE_LATER = new CopyOnWriteArrayList<>();
+	/** Packs being re-downloaded right now (damaged files, or packs from an imported list). */
+	private static final Set<String> FETCHING = java.util.concurrent.ConcurrentHashMap.newKeySet();
 	/** Files just downloaded with "Switch On" set, to show switched on next time this screen shows. */
 	private static final List<String> SWITCH_ON = new ArrayList<>();
 
@@ -168,10 +231,37 @@ public class TweakSwitchScreen extends PackListScreen {
 				this.refreshList();
 			}
 		});
+		loadSavedConflicts();
+	}
+
+	/** Reads which Vanilla Tweaks packs clash from the list the picker saved on disk. Never goes online. */
+	private static void loadSavedConflicts() {
+		Thread thread = new Thread(() -> {
+			List<VanillaTweaks.VtPack> packs = VanillaTweaks.savedPacks(VanillaTweaks.Kind.RESOURCE_PACKS);
+			if (packs != null) {
+				Map<String, List<String>> conflicts = new HashMap<>();
+				packs.stream().filter(pack -> !pack.incompatible().isEmpty()).forEach(pack -> conflicts.put(pack.id(), pack.incompatible()));
+				savedConflicts = conflicts;
+			}
+		}, "TweakSwitch clash list");
+		thread.setDaemon(true);
+		thread.start();
+	}
+
+	/** A fresh copy of this screen with the same unsaved switches, for when the UI size or color changed under it. */
+	public TweakSwitchScreen rebuilt() {
+		TweakSwitchScreen copy = new TweakSwitchScreen(this.lastScreen);
+		copy.pending.putAll(this.pending);
+		copy.wantedOrder = this.wantedOrder;
+		copy.dirty = this.dirty;
+		return copy;
 	}
 
 	private List<Pack> ourPacks() {
-		return this.repository.getAvailablePacks().stream().filter(TweakSwitchPackSource::isOurs).toList();
+		return this.repository.getAvailablePacks().stream()
+			.filter(TweakSwitchPackSource::isOurs)
+			.filter(pack -> !DELETE_LATER.contains(path(pack)))
+			.toList();
 	}
 
 	private static Path path(final Pack pack) {
@@ -216,12 +306,29 @@ public class TweakSwitchScreen extends PackListScreen {
 			};
 			tabs.add(button.highlightWhen(() -> Tab.fromSettings() == tab));
 		}
+		// "Sort: Name" at the end of the tab row
+		ThemedButton sort = new ThemedButton(this.theme(), ThemedButton.Kind.SECONDARY, Component.empty(), 86, button -> {
+			Settings settings = Settings.get();
+			settings.sortBy = SortBy.values()[(SortBy.fromSettings().ordinal() + 1) % SortBy.values().length].name();
+			settings.save();
+			this.refreshList();
+		}) {
+			@Override
+			public Component getMessage() {
+				return Component.translatable("tweakswitch.sort", Component.translatable(SortBy.fromSettings().key));
+			}
+		};
+		tabs.add(sort.withTooltip(Component.translatable("tweakswitch.sort.tooltip")));
 		return tabs;
 	}
 
 	/** Which tab a pack belongs on: where downloads.json says it came from, or Imported if it isn't in there. */
 	private Tab tabOf(final Pack pack) {
-		PackIndex.Entry entry = this.index.get(TweakSwitchPackSource.fileName(pack));
+		return this.tabOf(TweakSwitchPackSource.fileName(pack));
+	}
+
+	private Tab tabOf(final String fileName) {
+		PackIndex.Entry entry = this.index.get(fileName);
 		if (entry != null && PackIndex.VANILLA_TWEAKS.equals(entry.source())) {
 			return Tab.VANILLA_TWEAKS;
 		}
@@ -234,14 +341,25 @@ public class TweakSwitchScreen extends PackListScreen {
 	@Override
 	protected void addFooter() {
 		this.addFooterButtons(
-			this.button(Component.translatable("tweakswitch.getVanillaTweaks"), 100, button -> Compat.setScreen(this.minecraft, new VanillaTweaksScreen(this)))
+			this.button(Component.translatable("tweakswitch.getVanillaTweaks"), 94, button -> Compat.setScreen(this.minecraft, new VanillaTweaksScreen(this)))
 				.withTooltip(Component.translatable("tweakswitch.getVanillaTweaks.tooltip")),
-			this.button(Component.translatable("tweakswitch.getModrinth"), 80, button -> Compat.setScreen(this.minecraft, new ModrinthScreen(this)))
+			this.button(Component.translatable("tweakswitch.getModrinth"), 64, button -> Compat.setScreen(this.minecraft, new ModrinthScreen(this)))
 				.withTooltip(Component.translatable("tweakswitch.getModrinth.tooltip")),
-			this.button(Component.translatable("tweakswitch.getUpdates"), 70, button -> Compat.setScreen(this.minecraft, new UpdatesScreen(this)))
-				.withTooltip(Component.translatable("tweakswitch.getUpdates.tooltip")),
-			this.button(Component.translatable("tweakswitch.openFolder"), 80, button -> Compat.openFolder(this.packsDirCreated())),
-			this.primaryButton(CommonComponents.GUI_DONE, 60, button -> this.onClose())
+			new ThemedButton(this.theme(), ThemedButton.Kind.SECONDARY, Component.empty(), 70, button -> Compat.setScreen(this.minecraft, new UpdatesScreen(this))) {
+				@Override
+				public Component getMessage() {
+					// The start-up check's count, until the Updates screen has looked for itself
+					int known = Settings.get().knownPackUpdates;
+					return known > 0 ? Component.translatable("tweakswitch.getUpdates.count", known) : Component.translatable("tweakswitch.getUpdates");
+				}
+			}.withTooltip(Component.translatable("tweakswitch.getUpdates.tooltip")),
+			this.button(Component.translatable("tweakswitch.presets"), 48, button -> Compat.setScreen(this.minecraft, new PresetsScreen(this)))
+				.withTooltip(Component.translatable("tweakswitch.presets.tooltip")),
+			this.button(Component.translatable("tweakswitch.order"), 38, button -> this.openOrder())
+				.withTooltip(Component.translatable("tweakswitch.order.tooltip")),
+			this.button(Component.literal("⚙"), 18, button -> Compat.setScreen(this.minecraft, new SettingsScreen(this)))
+				.withTooltip(Component.translatable("tweakswitch.settings.tooltip")),
+			this.primaryButton(CommonComponents.GUI_DONE, 40, button -> this.onClose())
 		);
 
 	}
@@ -252,11 +370,15 @@ public class TweakSwitchScreen extends PackListScreen {
 		this.index = PackIndex.load();
 		Tab tab = Tab.fromSettings();
 		List<Pack> all = this.ourPacks();
-		this.tabCounts = all.stream().collect(Collectors.groupingBy(this::tabOf, () -> new EnumMap<>(Tab.class), Collectors.counting()))
-			.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().intValue()));
+		List<String> broken = TweakSwitchPackSource.brokenFiles();
+		Map<Tab, Integer> counts = new EnumMap<>(Tab.class);
+		all.forEach(pack -> counts.merge(this.tabOf(pack), 1, Integer::sum));
+		broken.forEach(file -> counts.merge(this.tabOf(file), 1, Integer::sum));
+		this.tabCounts = counts;
+		Collection<String> selected = this.repository.getSelectedIds();
 		List<Pack> ours = all.stream()
 			.filter(pack -> this.tabOf(pack) == tab)
-			.sorted(Comparator.comparing(pack -> pack.getTitle().getString().toLowerCase(Locale.ROOT)))
+			.sorted(this.order(SortBy.fromSettings(), selected))
 			.toList();
 		// Search also looks at the file name and what's inside, so "flame" finds a pack that changes the flame particle
 		List<Pack> shown = ours.stream().filter(pack -> {
@@ -264,27 +386,49 @@ public class TweakSwitchScreen extends PackListScreen {
 			return this.matches(pack.getTitle().getString(), pack.getDescription().getString(), TweakSwitchPackSource.fileName(pack),
 				contents != null ? contents.searchText() : "");
 		}).toList();
+		List<String> shownBroken = broken.stream().filter(file -> this.tabOf(file) == tab && this.matches(file)).toList();
 
-		if (shown.isEmpty()) {
-			list.addText(Component.translatable(ours.isEmpty() ? tab.emptyKey : "tweakswitch.noMatches").withStyle(ChatFormatting.GRAY));
+		// A newer TweakSwitch, if the start-up check found one
+		String newVersion = StartupCheck.newerVersion();
+		if (newVersion != null && !this.isSearching()) {
+			list.addCentered(this.primaryButton(Component.translatable("tweakswitch.modUpdate", newVersion), 230,
+				ConfirmLinkScreen.confirmLink(this, StartupCheck.DOWNLOAD_PAGE)).withTooltip(Component.translatable("tweakswitch.modUpdate.tooltip")));
+		}
+
+		if (shown.isEmpty() && shownBroken.isEmpty()) {
+			list.addText(Component.translatable(ours.isEmpty() && broken.stream().noneMatch(file -> this.tabOf(file) == tab) ? tab.emptyKey : "tweakswitch.noMatches")
+				.withStyle(ChatFormatting.GRAY));
 			return;
+		}
+
+		// Damaged zips first: the game can't read them, so they'd otherwise just be missing
+		if (!shownBroken.isEmpty()) {
+			this.addCategory(list, COLLAPSED, true, Component.translatable("tweakswitch.broken.group").getString(), Integer.toString(shownBroken.size()),
+				() -> shownBroken.forEach(file -> list.addRow(this.createBrokenRow(file))));
 		}
 
 		ours.forEach(TweakSwitchScreen::packIcon);
 		Map<String, Long> iconUses = ours.stream().map(pack -> PACK_ICON_HASHES.get(pack.getId())).filter(java.util.Objects::nonNull)
 			.collect(Collectors.groupingBy(hash -> hash, Collectors.counting()));
 		this.sharedIconHashes = iconUses.entrySet().stream().filter(use -> use.getValue() >= SHARED_ICON_THRESHOLD).map(Map.Entry::getKey).collect(Collectors.toSet());
-		Collection<String> selected = this.repository.getSelectedIds();
 		GroupBy groupBy = GroupBy.fromSettings();
+		String pinnedGroup = Component.translatable("tweakswitch.group.pinned").getString();
 		String last = groupBy == GroupBy.SOURCE ? Component.translatable("tweakswitch.otherPacks").getString() : Component.translatable("tweakswitch.group.unknown").getString();
-		// Sorted by name, with the catch-all group ("Other Packs", "Not looked at yet") last
-		Map<String, List<Pack>> groups = new TreeMap<>(Comparator.comparing((String name) -> name.equals(last)).thenComparing(Comparator.naturalOrder()));
+		// Pinned packs on top, then groups by name, with the catch-all group ("Other Packs", "Looking inside…") last
+		Map<String, List<Pack>> groups = new TreeMap<>(Comparator.comparingInt((String name) -> name.equals(pinnedGroup) ? 0 : name.equals(last) ? 2 : 1)
+			.thenComparing(Comparator.naturalOrder()));
+		List<String> pinned = Settings.get().pinned;
 		// In "Changes" mode, packs about the same thing get their own sub-group ("Particles · Dripping") when there are two or more
 		Map<String, Long> subjects = groupBy != GroupBy.CHANGES ? Map.of() : shown.stream()
+			.filter(pack -> !pinned.contains(TweakSwitchPackSource.fileName(pack)))
 			.map(pack -> PackContents.cached(path(pack)))
 			.filter(contents -> contents != null && !contents.subject().isEmpty())
 			.collect(Collectors.groupingBy(contents -> contents.primary().label + SUBGROUP + contents.subject(), Collectors.counting()));
 		for (Pack pack : shown) {
+			if (pinned.contains(TweakSwitchPackSource.fileName(pack))) {
+				groups.computeIfAbsent(pinnedGroup, name -> new ArrayList<>()).add(pack);
+				continue;
+			}
 			String group = this.groupOf(pack, groupBy, selected, last);
 			PackContents.Info contents = groupBy == GroupBy.CHANGES ? PackContents.cached(path(pack)) : null;
 			if (contents != null && subjects.getOrDefault(group + SUBGROUP + contents.subject(), 0L) >= 2) {
@@ -295,7 +439,7 @@ public class TweakSwitchScreen extends PackListScreen {
 
 		groups.forEach((group, packs) -> {
 			long on = packs.stream().filter(pack -> this.isOn(pack, selected)).count();
-			String count = groupBy == GroupBy.STATUS ? Integer.toString(packs.size()) : on + "/" + packs.size() + " on";
+			String count = groupBy == GroupBy.STATUS && !group.equals(pinnedGroup) ? Integer.toString(packs.size()) : on + "/" + packs.size() + " on";
 			// The header's own switch turns the whole group on, or off if it's all on already
 			SectionHeader.BulkSwitch bulk = new SectionHeader.BulkSwitch(
 				() -> packs.stream().allMatch(pack -> this.isOn(pack, this.repository.getSelectedIds())),
@@ -307,9 +451,50 @@ public class TweakSwitchScreen extends PackListScreen {
 			this.addCategory(list, COLLAPSED, true, group, count, () -> packs.forEach(pack -> {
 				SwitchRow row = this.createSwitch(pack);
 				this.switchRows.put(row, pack);
-				list.addRow(row, SwitchRow.HEIGHT);
+				list.addRow(row);
 			}), bulk);
 		});
+	}
+
+	/** The order of switches inside a group. */
+	private Comparator<Pack> order(final SortBy sortBy, final Collection<String> selected) {
+		Comparator<Pack> byName = Comparator.comparing(pack -> pack.getTitle().getString().toLowerCase(Locale.ROOT));
+		return switch (sortBy) {
+			case NAME -> byName;
+			case ON_FIRST -> Comparator.comparing((Pack pack) -> !this.isOn(pack, selected)).thenComparing(byName);
+			case RECENT -> {
+				Map<String, Long> modified = new HashMap<>();
+				yield Comparator.comparing((Pack pack) -> -modified.computeIfAbsent(pack.getId(), id -> {
+					try {
+						return Files.getLastModifiedTime(path(pack)).toMillis();
+					} catch (IOException e) {
+						return 0L;
+					}
+				})).thenComparing(byName);
+			}
+		};
+	}
+
+	/** A zip the game couldn't read: named in red, with a click to download it again if its source is known, or delete it. */
+	private ActionRow createBrokenRow(final String file) {
+		PackIndex.Entry entry = this.index.get(file);
+		boolean redownloadable = entry != null && entry.source() != null && entry.id() != null;
+		String title = entry != null && entry.title() != null ? entry.title() : file;
+		boolean busy = FETCHING.contains(file);
+		Runnable delete = () -> this.confirmDelete(file, title, false);
+		Runnable redownload = () -> {
+			if (FETCHING.add(file)) {
+				this.queueRefresh();
+				this.fetchInBackground(List.of(new PackShare.Shared(file, entry.title(), entry.category(), entry.source(), entry.id(), false)), false);
+			}
+		};
+		String action = Component.translatable(busy ? "tweakswitch.broken.fetching" : redownloadable ? "tweakswitch.broken.redownload" : "tweakswitch.delete").getString();
+		List<ActionRow.Extra> extras = redownloadable
+			? List.of(new ActionRow.Extra("✕", Component.translatable("tweakswitch.delete"), delete, true))
+			: List.of();
+		ActionRow row = new ActionRow(this.theme(), () -> UNKNOWN_PACK_ICON, title, Component.translatable("tweakswitch.broken.note").getString(), action, true,
+			busy ? () -> { } : redownloadable ? redownload : delete, extras);
+		return row.withTooltip(Component.translatable(redownloadable ? "tweakswitch.broken.tooltip.redownload" : "tweakswitch.broken.tooltip.delete", file));
 	}
 
 	private boolean isOn(final Pack pack, final Collection<String> selected) {
@@ -354,6 +539,11 @@ public class TweakSwitchScreen extends PackListScreen {
 		if (contents != null) {
 			details.append(contents.summary().copy().withColor(this.theme().accent())).append("\n");
 		}
+		List<Pack> clashes = this.clashesWith(pack, true);
+		if (!clashes.isEmpty()) {
+			String names = clashes.stream().map(other -> other.getTitle().getString()).collect(Collectors.joining(", "));
+			details.append(Component.translatable("tweakswitch.clash.line", names).withStyle(ChatFormatting.GOLD)).append("\n");
+		}
 		details.append(Component.literal(TweakSwitchPackSource.fileName(pack)).withStyle(ChatFormatting.DARK_GRAY));
 
 		List<String> websitePictures = List.of();
@@ -376,13 +566,67 @@ public class TweakSwitchScreen extends PackListScreen {
 			: Component.empty().append(pack.getDescription()).append("\n").append(Component.translatable("tweakswitch.incompatible").withStyle(ChatFormatting.RED));
 		PackContents.Info contents = PackContents.cached(path(pack));
 		String tag = contents != null ? contents.primary().label : "";
-		return new SwitchRow(this.theme(), this.iconFor(pack), pack.getTitle(), description, tag, !compatible,
+		boolean on = this.isOn(pack, this.repository.getSelectedIds());
+		SwitchRow row = new SwitchRow(this.theme(), this.iconFor(pack), pack.getTitle(), description, tag, !compatible,
 			() -> this.pending.getOrDefault(id, this.repository.getSelectedIds().contains(id)),
-			() -> {
-				this.pending.put(id, !this.pending.getOrDefault(id, this.repository.getSelectedIds().contains(id)));
-				// Updates the "x/y on" counts
-				this.queueRefresh();
-			});
+			() -> this.toggle(pack));
+		return row.pinned(Settings.get().pinned.contains(TweakSwitchPackSource.fileName(pack))).clash(on && !this.clashesWith(pack, true).isEmpty());
+	}
+
+	/** Flips one switch. Turning on a Vanilla Tweaks pack that clashes with one that's on asks what to do first. */
+	private void toggle(final Pack pack) {
+		String id = pack.getId();
+		boolean turningOn = !this.isOn(pack, this.repository.getSelectedIds());
+		List<Pack> clashes = turningOn && Settings.get().conflictWarnings ? this.clashesWith(pack, true) : List.of();
+		if (clashes.isEmpty()) {
+			this.pending.put(id, turningOn);
+			// Updates the "x/y on" counts
+			this.queueRefresh();
+			return;
+		}
+		String names = clashes.stream().map(other -> other.getTitle().getString()).collect(Collectors.joining(", "));
+		Compat.setScreen(this.minecraft, new ConfirmScreen(turnOthersOff -> {
+			this.pending.put(id, true);
+			if (turnOthersOff) {
+				clashes.forEach(other -> this.pending.put(other.getId(), false));
+			}
+			Compat.setScreen(this.minecraft, this);
+		}, Component.translatable("tweakswitch.clash.title"), Component.translatable("tweakswitch.clash.message", pack.getTitle(), names),
+			Component.translatable(clashes.size() == 1 ? "tweakswitch.clash.turnOff" : "tweakswitch.clash.turnOffAll"), Component.translatable("tweakswitch.clash.keepBoth")));
+	}
+
+	/** The Vanilla Tweaks ids a pack clashes with: saved with the download, or from the picker's saved list. */
+	private List<String> conflictIds(final PackIndex.@Nullable Entry entry) {
+		if (entry == null || entry.id() == null || !PackIndex.VANILLA_TWEAKS.equals(entry.source())) {
+			return List.of();
+		}
+		return entry.conflicts() != null ? entry.conflicts() : savedConflicts.getOrDefault(entry.id(), List.of());
+	}
+
+	/**
+	 * Vanilla Tweaks packs that clash with this one, e.g. two crosshairs: only one of them can show.
+	 *
+	 * @param onlyOn true to count just the ones switched on
+	 */
+	private List<Pack> clashesWith(final Pack pack, final boolean onlyOn) {
+		PackIndex.Entry entry = this.index.get(TweakSwitchPackSource.fileName(pack));
+		if (entry == null || entry.id() == null || !PackIndex.VANILLA_TWEAKS.equals(entry.source())) {
+			return List.of();
+		}
+		List<String> mine = this.conflictIds(entry);
+		Collection<String> selected = this.repository.getSelectedIds();
+		List<Pack> clashes = new ArrayList<>();
+		for (Pack other : this.ourPacks()) {
+			PackIndex.Entry otherEntry = this.index.get(TweakSwitchPackSource.fileName(other));
+			if (other == pack || otherEntry == null || otherEntry.id() == null || !PackIndex.VANILLA_TWEAKS.equals(otherEntry.source())) {
+				continue;
+			}
+			boolean clash = mine.contains(otherEntry.id()) || this.conflictIds(otherEntry).contains(entry.id());
+			if (clash && (!onlyOn || this.isOn(other, selected))) {
+				clashes.add(other);
+			}
+		}
+		return clashes;
 	}
 
 	/**
@@ -413,7 +657,7 @@ public class TweakSwitchScreen extends PackListScreen {
 	}
 
 	/** The pack's own pack.png as a texture, loaded once per session; vanilla's "unknown pack" picture if it has none. */
-	private static Identifier packIcon(final Pack pack) {
+	static Identifier packIcon(final Pack pack) {
 		return PACK_ICONS.computeIfAbsent(pack.getId(), id -> {
 			try {
 				byte[] bytes = Compat.readPackRoot(pack, "pack.png");
@@ -436,34 +680,405 @@ public class TweakSwitchScreen extends PackListScreen {
 		Compat.setScreen(this.minecraft, this.lastScreen);
 	}
 
-	private void applyChanges() {
+	/** Moves the switches the player flipped into the pack selection, without reloading resources yet. */
+	private void commit() {
 		boolean changed = false;
 		for (Map.Entry<String, Boolean> change : this.pending.entrySet()) {
 			changed |= change.getValue() ? this.repository.addPack(change.getKey()) : this.repository.removePack(change.getKey());
 		}
-
 		this.pending.clear();
-		if (changed) {
+		if (this.wantedOrder != null) {
+			List<String> before = List.copyOf(this.repository.getSelectedIds());
+			List<String> after = Presets.reorder(before, this.wantedOrder);
+			if (!after.equals(before)) {
+				this.repository.setSelected(after);
+				changed = true;
+			}
+			this.wantedOrder = null;
+		}
+		this.dirty |= changed;
+	}
+
+	private void applyChanges() {
+		this.commit();
+		if (this.dirty) {
+			this.dirty = false;
 			// Saves the new pack list to options.txt and reloads resources
 			this.minecraft.options.updateResourcePacks(this.repository);
 		}
 	}
 
+	/** The pack ids that are (or will be, once Done is clicked) switched on, lowest priority first. */
+	public List<String> onIds() {
+		List<String> ids = new ArrayList<>(this.repository.getSelectedIds());
+		this.pending.forEach((id, on) -> {
+			ids.remove(id);
+			if (on) {
+				ids.add(id);
+			}
+		});
+		List<String> ours = ids.stream().filter(id -> id.startsWith(Presets.ID_PREFIX)).toList();
+		return this.wantedOrder == null ? ours : Presets.reorder(ours, this.wantedOrder);
+	}
+
+	/** Switches on exactly the preset's packs, right away, with one reload. */
+	public void applyPreset(final String name, final List<String> files) {
+		this.pending.clear();
+		this.wantedOrder = null;
+		this.dirty = false;
+		Presets.apply(this.minecraft, name, files);
+	}
+
+	/** Opens the order screen. The flipped switches are put into the selection first, so it lists what will be on. */
+	private void openOrder() {
+		this.commit();
+		Compat.setScreen(this.minecraft, new PackOrderScreen(this, this.repository, () -> this.dirty = true));
+	}
+
+	// ---- Right-click menu: pin, split, delete
+
 	@Override
-	public void onFilesDrop(final List<Path> files) {
-		String names = files.stream().map(path -> path.getFileName().toString()).collect(Collectors.joining(", "));
+	public boolean mouseClicked(final MouseButtonEvent event, final boolean doubleClick) {
+		if (this.menu != null) {
+			int item = this.menu.itemAt(event.x(), event.y());
+			Menu open = this.menu;
+			this.menu = null;
+			if (item >= 0 && event.button() == 0) {
+				open.items().get(item).action().run();
+			}
+			return true;
+		}
+		if (event.button() == 1) {
+			Pack pack = this.switchRows.get(this.hoveredListWidget(event.x(), event.y()));
+			if (pack != null) {
+				this.openMenu(pack, (int) event.x(), (int) event.y());
+				return true;
+			}
+		}
+		return super.mouseClicked(event, doubleClick);
+	}
+
+	/** With a switch focused by keyboard: Delete removes the pack, P pins it, and the Menu key opens its menu. Esc closes the menu. */
+	@Override
+	public boolean keyPressed(final KeyEvent event) {
+		if (this.menu != null) {
+			this.menu = null;
+			return true;
+		}
+		Pack focused = this.switchRows.get(this.focusedListWidget());
+		if (focused != null) {
+			if (event.key() == InputConstants.KEY_DELETE) {
+				this.confirmDelete(TweakSwitchPackSource.fileName(focused), focused.getTitle().getString(), this.repository.getSelectedIds().contains(focused.getId()));
+				return true;
+			}
+			if (event.key() == InputConstants.KEY_P) {
+				this.togglePin(focused);
+				return true;
+			}
+			if (event.key() == 348) {
+				// GLFW's Menu key
+				AbstractWidget widget = this.focusedListWidget();
+				this.openMenu(focused, widget.getX() + 20, widget.getY() + widget.getHeight());
+				return true;
+			}
+		}
+		return super.keyPressed(event);
+	}
+
+	private void openMenu(final Pack pack, final int x, final int y) {
+		String file = TweakSwitchPackSource.fileName(pack);
+		List<MenuItem> items = new ArrayList<>();
+		boolean pinned = Settings.get().pinned.contains(file);
+		items.add(new MenuItem(Component.translatable(pinned ? "tweakswitch.menu.unpin" : "tweakswitch.menu.pin"), false, () -> this.togglePin(pack)));
+		List<String> tweaks = VanillaTweaks.combinedPackIds(path(pack));
+		if (!tweaks.isEmpty()) {
+			items.add(new MenuItem(Component.translatable("tweakswitch.menu.split", tweaks.size()), false, () -> this.splitCombined(tweaks)));
+		}
+		items.add(new MenuItem(Component.translatable("tweakswitch.openFolder"), false, () -> Compat.openFolder(this.packsDirCreated())));
+		items.add(new MenuItem(Component.translatable("tweakswitch.menu.delete"), true,
+			() -> this.confirmDelete(file, pack.getTitle().getString(), this.repository.getSelectedIds().contains(pack.getId()))));
+		int width = items.stream().mapToInt(item -> this.font.width(item.label())).max().orElse(60) + 14;
+		Menu sized = new Menu(0, 0, width, items);
+		this.menu = new Menu(Math.max(2, Math.min(x, this.width - width - 2)), Math.max(2, Math.min(y, this.height - sized.height() - 2)), width, items);
+	}
+
+	@Override
+	protected void drawPopups(final Gfx graphics, final int mouseX, final int mouseY) {
+		Menu open = this.menu;
+		if (open == null) {
+			return;
+		}
+		graphics.nextStratum();
+		Draw.roundRectOutlined(graphics, open.x(), open.y(), open.width(), open.height(), 4, this.theme().bar(), this.theme().accent());
+		int hovered = open.itemAt(mouseX, mouseY);
+		for (int i = 0; i < open.items().size(); i++) {
+			MenuItem item = open.items().get(i);
+			int itemY = open.y() + 2 + i * Menu.ITEM_HEIGHT;
+			if (i == hovered) {
+				Draw.roundRect(graphics, open.x() + 2, itemY, open.width() - 4, Menu.ITEM_HEIGHT, 3, this.theme().cardHover());
+			}
+			graphics.text(this.font, item.label(), open.x() + 7, itemY + 3, item.danger() ? 0xFFFF6B6B : this.theme().text(), false);
+		}
+	}
+
+	private void togglePin(final Pack pack) {
+		Settings settings = Settings.get();
+		String file = TweakSwitchPackSource.fileName(pack);
+		if (!settings.pinned.remove(file)) {
+			settings.pinned.add(file);
+		}
+		settings.save();
+		this.queueRefresh();
+	}
+
+	/** Opens the Vanilla Tweaks picker with a combined zip's tweaks already picked, ready to download as separate switches. */
+	private void splitCombined(final List<String> tweakIds) {
+		VanillaTweaksScreen.preselect(tweakIds);
+		Compat.setScreen(this.minecraft, new VanillaTweaksScreen(this));
+	}
+
+	// ---- Deleting packs
+
+	private void confirmDelete(final String file, final String title, final boolean on) {
 		Compat.setScreen(this.minecraft, new ConfirmScreen(confirmed -> {
 			if (confirmed) {
-				this.importPacks(files);
-				this.repository.reload();
-				// Dropped packs are imported ones, so show that tab
-				Settings settings = Settings.get();
-				settings.tab = Tab.IMPORTED.name();
-				settings.save();
+				this.delete(file);
+			}
+			Compat.setScreen(this.minecraft, this);
+		}, Component.translatable("tweakswitch.delete.title", title),
+			Component.translatable(on ? "tweakswitch.delete.messageOn" : "tweakswitch.delete.message", file),
+			Component.translatable("tweakswitch.delete"), CommonComponents.GUI_CANCEL));
+	}
+
+	/** Removes a pack's file from the TweakSwitch folder, switching it off first if it's on. */
+	private void delete(final String file) {
+		String id = TweakSwitchPackSource.idFor(file);
+		this.pending.remove(id);
+		if (this.repository.getSelectedIds().contains(id)) {
+			this.repository.removePack(id);
+			this.dirty = true;
+		}
+		Path target = TweakSwitch.packsDir().resolve(file);
+		if (!deleteFile(target)) {
+			// Windows keeps a pack's zip locked while it's in use; it goes once resources have reloaded without it
+			DELETE_LATER.add(target);
+		}
+		PackIndex.remove(file);
+		Settings settings = Settings.get();
+		if (settings.pinned.remove(file)) {
+			settings.save();
+		}
+	}
+
+	private static boolean deleteFile(final Path target) {
+		try {
+			if (Files.isDirectory(target)) {
+				try (Stream<Path> paths = Files.walk(target)) {
+					for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
+						Files.deleteIfExists(path);
+					}
+				}
+			} else {
+				Files.deleteIfExists(target);
+			}
+			return true;
+		} catch (IOException e) {
+			LOGGER.debug("Couldn't delete {} yet", target, e);
+			return false;
+		}
+	}
+
+	/** Tries again to delete files that were locked. Called now and then from the client tick, not while resources load. */
+	public static void deleteLeftovers(final Minecraft minecraft) {
+		if (DELETE_LATER.isEmpty() || Compat.loading(minecraft)) {
+			return;
+		}
+		Collection<String> selected = minecraft.getResourcePackRepository().getSelectedIds();
+		DELETE_LATER.removeIf(file -> !selected.contains(TweakSwitchPackSource.idFor(file.getFileName().toString())) && deleteFile(file));
+	}
+
+	// ---- Export and import
+
+	/** Saves the pack list and switch states to a file in tweakswitch/exports and shows it in the file manager. */
+	public void exportSwitches() {
+		this.exportSwitches(true);
+	}
+
+	/**
+	 * Saves the pack list and switch states to a file in tweakswitch/exports.
+	 *
+	 * @param reveal true opens the folder afterwards
+	 * @return the file, or null if it couldn't be written
+	 */
+	public @Nullable Path exportSwitches(final boolean reveal) {
+		this.index = PackIndex.load();
+		List<String> on = this.onIds();
+		List<PackShare.Shared> packs = new ArrayList<>();
+		Map<String, Pack> byId = new HashMap<>();
+		this.ourPacks().forEach(pack -> byId.put(pack.getId(), pack));
+		List<Pack> ordered = new ArrayList<>();
+		on.stream().map(byId::get).filter(java.util.Objects::nonNull).forEach(ordered::add);
+		this.ourPacks().stream().filter(pack -> !on.contains(pack.getId())).forEach(ordered::add);
+		for (Pack pack : ordered) {
+			String file = TweakSwitchPackSource.fileName(pack);
+			PackIndex.Entry entry = this.index.get(file);
+			packs.add(new PackShare.Shared(file, pack.getTitle().getString(), entry != null ? entry.category() : null, entry != null ? entry.source() : null,
+				entry != null ? entry.id() : null, on.contains(pack.getId())));
+		}
+		try {
+			Path file = PackShare.write(new PackShare.Export(Modrinth.gameVersion(), packs));
+			toast(Component.translatable("tweakswitch.export.done", packs.size()), Component.literal(file.getFileName().toString()));
+			if (reveal) {
+				Compat.openFolder(PackShare.dir());
+			}
+			return file;
+		} catch (IOException e) {
+			LOGGER.warn("Couldn't write the export", e);
+			toast(Component.translatable("tweakswitch.export.failed"), Component.literal(String.valueOf(e.getMessage())));
+			return null;
+		}
+	}
+
+	private void toast(final Component title, final Component body) {
+		SystemToast.addOrUpdate(Compat.toasts(this.minecraft), SystemToast.SystemToastId.PERIODIC_NOTIFICATION, title, body);
+	}
+
+	/**
+	 * Reads an exported list: packs you have are switched to match, and ones you don't have that came from Vanilla Tweaks
+	 * or Modrinth can be downloaded. Asks first, saying how many of each.
+	 */
+	public void importSwitches(final Path file) {
+		PackShare.Export export;
+		try {
+			export = PackShare.parse(Files.readString(file));
+		} catch (IOException e) {
+			export = null;
+		}
+		if (export == null) {
+			this.toast(Component.translatable("tweakswitch.import.notExport"), Component.literal(file.getFileName().toString()));
+			return;
+		}
+		Set<String> have = this.ourPacks().stream().map(TweakSwitchPackSource::fileName).collect(Collectors.toSet());
+		List<PackShare.Shared> matching = export.packs().stream().filter(pack -> have.contains(pack.file())).toList();
+		List<PackShare.Shared> downloadable = export.packs().stream().filter(pack -> !have.contains(pack.file()) && pack.downloadable()).toList();
+		long skipped = export.packs().size() - matching.size() - downloadable.size();
+		PackShare.Export chosen = export;
+		Compat.setScreen(this.minecraft, new ConfirmScreen(confirmed -> {
+			Compat.setScreen(this.minecraft, this);
+			if (confirmed) {
+				this.applyImport(chosen, matching, downloadable);
+			}
+		}, Component.translatable("tweakswitch.import.title"),
+			Component.translatable("tweakswitch.import.message", matching.size(), downloadable.size(), skipped),
+			Component.translatable(downloadable.isEmpty() ? "tweakswitch.import.apply" : "tweakswitch.import.applyAndDownload"), CommonComponents.GUI_CANCEL));
+	}
+
+	private void applyImport(final PackShare.Export export, final List<PackShare.Shared> matching, final List<PackShare.Shared> downloadable) {
+		// Packs not in the list are left alone
+		matching.forEach(pack -> this.pending.put(TweakSwitchPackSource.idFor(pack.file()), pack.on()));
+		this.wantedOrder = export.packs().stream().filter(PackShare.Shared::on).map(pack -> TweakSwitchPackSource.idFor(pack.file())).collect(Collectors.toCollection(ArrayList::new));
+		this.refreshList();
+		if (!downloadable.isEmpty()) {
+			downloadable.forEach(pack -> FETCHING.add(pack.file()));
+			this.fetchInBackground(downloadable, true);
+		}
+	}
+
+	/**
+	 * Downloads packs again from where they came from, one at a time, then shows them. Used for damaged files and for
+	 * packs named in an imported list.
+	 *
+	 * @param applyStates true to give each downloaded pack the on/off state its entry asks for
+	 */
+	private void fetchInBackground(final List<PackShare.Shared> packs, final boolean applyStates) {
+		Thread thread = new Thread(() -> {
+			Map<PackShare.Shared, String> saved = new LinkedHashMap<>();
+			int failed = 0;
+			for (PackShare.Shared pack : packs) {
+				try {
+					String name = PackShare.fetch(pack.source(), pack.id(), pack.title());
+					saved.put(pack, name);
+					if (!name.equals(pack.file())) {
+						// It came back under another name (the site renamed it): the damaged original would be a duplicate
+						Path old = TweakSwitch.packsDir().resolve(pack.file());
+						if (TweakSwitchPackSource.brokenFiles().contains(pack.file()) && deleteFile(old)) {
+							PackIndex.remove(pack.file());
+						}
+					}
+				} catch (Exception e) {
+					LOGGER.warn("Couldn't download {} again", pack.file(), e);
+					failed++;
+				} finally {
+					FETCHING.remove(pack.file());
+				}
+			}
+			int failures = failed;
+			this.minecraft.execute(() -> {
+				if (applyStates) {
+					saved.forEach((pack, name) -> {
+						this.pending.put(TweakSwitchPackSource.idFor(name), pack.on());
+						if (this.wantedOrder != null) {
+							int at = this.wantedOrder.indexOf(TweakSwitchPackSource.idFor(pack.file()));
+							if (at >= 0) {
+								this.wantedOrder.set(at, TweakSwitchPackSource.idFor(name));
+							}
+						}
+					});
+				}
+				this.toast(Component.translatable(saved.size() == 1 ? "tweakswitch.doneOne" : "tweakswitch.done", saved.size()),
+					failures > 0 ? Component.translatable("tweakswitch.someFailed", failures).withStyle(ChatFormatting.RED) : Component.translatable("tweakswitch.fetch.doneHint"));
+				if (Compat.screen(this.minecraft) == this) {
+					this.repository.reload();
+					this.refreshList();
+				}
+			});
+		}, "TweakSwitch pack re-download");
+		thread.setDaemon(true);
+		thread.start();
+	}
+
+	@Override
+	public void onFilesDrop(final List<Path> files) {
+		// An exported switch list, not a pack
+		for (Path file : files) {
+			if (file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".json")) {
+				this.importSwitches(file);
+				return;
+			}
+		}
+		String names = files.stream().map(path -> path.getFileName().toString()).collect(Collectors.joining(", "));
+		// A combined zip from the Vanilla Tweaks website can come in as one switch per tweak instead
+		for (Path file : files) {
+			List<String> tweaks = files.size() == 1 ? VanillaTweaks.combinedPackIds(file) : List.of();
+			if (!tweaks.isEmpty()) {
+				Compat.setScreen(this.minecraft, new ConfirmScreen(split -> {
+					if (split) {
+						this.splitCombined(tweaks);
+					} else {
+						this.importDropped(files);
+						Compat.setScreen(this.minecraft, this);
+					}
+				}, Component.translatable("tweakswitch.split.title"), Component.translatable("tweakswitch.split.message", names, tweaks.size()),
+					Component.translatable("tweakswitch.split.yes", tweaks.size()), Component.translatable("tweakswitch.split.no")));
+				return;
+			}
+		}
+		Compat.setScreen(this.minecraft, new ConfirmScreen(confirmed -> {
+			if (confirmed) {
+				this.importDropped(files);
 			}
 
 			Compat.setScreen(this.minecraft, this);
 		}, Component.translatable("tweakswitch.dropConfirm"), Component.literal(names)));
+	}
+
+	private void importDropped(final List<Path> files) {
+		this.importPacks(files);
+		this.repository.reload();
+		// Dropped packs are imported ones, so show that tab
+		Settings settings = Settings.get();
+		settings.tab = Tab.IMPORTED.name();
+		settings.save();
 	}
 
 	private void importPacks(final List<Path> files) {

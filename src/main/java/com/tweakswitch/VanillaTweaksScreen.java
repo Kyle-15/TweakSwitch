@@ -11,7 +11,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import com.tweakswitch.compat.Compat;
 import com.tweakswitch.ui.PackTile;
+import com.tweakswitch.ui.Ui;
+import net.minecraft.client.gui.components.toasts.SystemToast;
+import com.tweakswitch.ui.Ui;
 import com.tweakswitch.ui.Theme;
 import java.util.function.BooleanSupplier;
 import net.minecraft.ChatFormatting;
@@ -33,7 +37,14 @@ public class VanillaTweaksScreen extends DownloadScreen<VanillaTweaks.VtPack> {
 
 	// Kept for the session so reopening the screen doesn't fetch the list again
 	private static final Map<VanillaTweaks.Kind, List<VanillaTweaks.VtPack>> PACKS = new EnumMap<>(VanillaTweaks.Kind.class);
-	private static final Map<VanillaTweaks.Kind, String> LOAD_ERRORS = new EnumMap<>(VanillaTweaks.Kind.class);
+	private static final Map<VanillaTweaks.Kind, Component> LOAD_ERRORS = new EnumMap<>(VanillaTweaks.Kind.class);
+	/** Resource pack ids to pick as soon as the list is up: the tweaks inside a combined zip being split. */
+	private static final Set<String> PRESELECT = new HashSet<>();
+
+	/** Picks these packs the next time the resource pack picker shows its list. */
+	public static void preselect(final List<String> packIds) {
+		PRESELECT.addAll(packIds);
+	}
 	private static final Set<VanillaTweaks.Kind> LOADING = EnumSet.noneOf(VanillaTweaks.Kind.class);
 	/** Categories the player opened; all start closed. Kept for the session. */
 	private static final Set<String> EXPANDED = new HashSet<>();
@@ -63,8 +74,39 @@ public class VanillaTweaksScreen extends DownloadScreen<VanillaTweaks.VtPack> {
 
 	protected void loadIfNeeded() {
 		if (!PACKS.containsKey(this.kind) && !LOADING.contains(this.kind)) {
-			this.loadPacks(this.kind);
+			this.loadPacks(this.kind, false);
 		}
+	}
+
+	/** Asks the site for the list again, after a failure or to replace a saved copy. */
+	private void retry() {
+		if (!LOADING.contains(this.kind)) {
+			PACKS.remove(this.kind);
+			this.loadPacks(this.kind, true);
+			this.refreshList();
+		}
+	}
+
+	/** Picks the tweaks of a combined zip, opens their categories and says so. Runs once the list is loaded. */
+	private void applyPreselect() {
+		List<VanillaTweaks.VtPack> packs = PACKS.get(VanillaTweaks.Kind.RESOURCE_PACKS);
+		if (PRESELECT.isEmpty() || packs == null || this.kind != VanillaTweaks.Kind.RESOURCE_PACKS) {
+			return;
+		}
+		Set<String> downloaded = this.downloadedFiles();
+		int picked = 0;
+		for (VanillaTweaks.VtPack pack : packs) {
+			if (PRESELECT.contains(pack.id()) && !downloaded.contains(pack.fileName())) {
+				this.selected.put(this.id(pack), pack);
+				EXPANDED.add(pack.category());
+				picked++;
+			}
+		}
+		int missing = PRESELECT.size() - picked;
+		PRESELECT.clear();
+		SystemToast.addOrUpdate(Compat.toasts(this.minecraft), SystemToast.SystemToastId.PERIODIC_NOTIFICATION,
+			Component.translatable("tweakswitch.split.picked", picked), Component.translatable(missing > 0 ? "tweakswitch.split.pickedSome" : "tweakswitch.split.pickedHint", missing));
+		this.updateDownloadButton();
 	}
 
 	/** The list for the showing kind, or null while it loads. */
@@ -77,20 +119,20 @@ public class VanillaTweaksScreen extends DownloadScreen<VanillaTweaks.VtPack> {
 		return packs == null ? 0 : packs.size();
 	}
 
-	private void loadPacks(final VanillaTweaks.Kind kind) {
+	private void loadPacks(final VanillaTweaks.Kind kind, final boolean refresh) {
 		LOADING.add(kind);
 		LOAD_ERRORS.remove(kind);
 		Thread thread = new Thread(() -> {
 			List<VanillaTweaks.VtPack> result = null;
-			String error = null;
+			Component error = null;
 			try {
-				result = VanillaTweaks.fetchPacks(kind);
+				result = VanillaTweaks.fetchPacks(kind, refresh);
 			} catch (Exception e) {
 				LOGGER.warn("Failed to load the Vanilla Tweaks list for {}", kind, e);
-				error = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+				error = WebErrors.describe(e);
 			}
 			List<VanillaTweaks.VtPack> loaded = result;
-			String failure = error;
+			Component failure = error;
 			this.minecraft.execute(() -> {
 				if (loaded != null) {
 					PACKS.put(kind, loaded);
@@ -122,11 +164,17 @@ public class VanillaTweaksScreen extends DownloadScreen<VanillaTweaks.VtPack> {
 	@Override
 	protected void fillPackList(final PackList list) {
 		if (this.packs() == null) {
-			String loadError = LOAD_ERRORS.get(this.kind);
-			list.addText(loadError != null
-				? Component.translatable("tweakswitch.loadFailed", loadError).withStyle(ChatFormatting.RED)
-				: Component.translatable("tweakswitch.loading").withStyle(ChatFormatting.GRAY));
+			Component loadError = LOAD_ERRORS.get(this.kind);
+			if (loadError != null && !LOADING.contains(this.kind)) {
+				this.addError(list, loadError, this::retry);
+			} else {
+				list.addText(Component.translatable("tweakswitch.loading").withStyle(ChatFormatting.GRAY));
+			}
 			return;
+		}
+		this.applyPreselect();
+		if (VanillaTweaks.listIsStale(this.kind) && !this.isSearching()) {
+			this.addStaleNote(list, this::retry);
 		}
 
 		Set<String> downloaded = this.downloadedFiles();
@@ -147,7 +195,7 @@ public class VanillaTweaksScreen extends DownloadScreen<VanillaTweaks.VtPack> {
 				for (VanillaTweaks.VtPack pack : categoryPacks) {
 					widgets.add(this.createRow(pack, downloaded));
 				}
-				list.addTiles(widgets, PackTile.MIN_WIDTH, PackTile.HEIGHT);
+				list.addTiles(widgets, PackTile.MIN_WIDTH, Ui.tile());
 			});
 		});
 	}
@@ -189,7 +237,25 @@ public class VanillaTweaksScreen extends DownloadScreen<VanillaTweaks.VtPack> {
 		return new PackTile(this.theme(), Component.literal(pack.display()), () -> {
 			RemoteImages.Image icon = RemoteImages.getIcon(iconUrl);
 			return icon.textureAt(0);
-		}, picked, done, toggle);
+		}, picked, done, () -> {
+			toggle.run();
+			this.warnAboutClash(pack);
+		});
+	}
+
+	/** Picking a pack that clashes with another picked one (two crosshairs, say) says so straight away. */
+	private void warnAboutClash(final VanillaTweaks.VtPack pack) {
+		if (!this.selected.containsKey(this.id(pack)) || !Settings.get().conflictWarnings) {
+			return;
+		}
+		List<String> clashes = this.selected.values().stream()
+			.filter(other -> other != pack && other.kind() == pack.kind() && (pack.incompatible().contains(other.id()) || other.incompatible().contains(pack.id())))
+			.map(VanillaTweaks.VtPack::display)
+			.toList();
+		if (!clashes.isEmpty()) {
+			SystemToast.addOrUpdate(Compat.toasts(this.minecraft), SystemToast.SystemToastId.PERIODIC_NOTIFICATION,
+				Component.translatable("tweakswitch.clash.toast", pack.display()), Component.literal(String.join(", ", clashes)));
+		}
 	}
 
 	/** Back on the TweakSwitch screen, show the tab the new packs landed on. */
@@ -220,7 +286,7 @@ public class VanillaTweaksScreen extends DownloadScreen<VanillaTweaks.VtPack> {
 
 	@Override
 	protected PackIndex.Entry indexEntry(final VanillaTweaks.VtPack pack) {
-		return new PackIndex.Entry(pack.category(), PackIndex.VANILLA_TWEAKS, pack.id());
+		return new PackIndex.Entry(pack.category(), PackIndex.VANILLA_TWEAKS, pack.id()).withConflicts(pack.incompatible());
 	}
 
 	@Override

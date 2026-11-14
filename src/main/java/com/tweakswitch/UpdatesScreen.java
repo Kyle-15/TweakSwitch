@@ -49,7 +49,7 @@ public class UpdatesScreen extends DownloadScreen<UpdatesScreen.Item> {
 	}
 
 	private @Nullable List<Item> items;
-	private @Nullable String checkError;
+	private @Nullable Component checkError;
 	private boolean checking;
 
 	public UpdatesScreen(final @Nullable Screen lastScreen) {
@@ -72,15 +72,15 @@ public class UpdatesScreen extends DownloadScreen<UpdatesScreen.Item> {
 		this.refreshList();
 		Thread thread = new Thread(() -> {
 			List<Item> found = null;
-			String error = null;
+			Component error = null;
 			try {
 				found = findUpdates();
 			} catch (Exception e) {
 				LOGGER.warn("Update check failed", e);
-				error = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+				error = WebErrors.describe(e);
 			}
 			List<Item> result = found;
-			String failure = error;
+			Component failure = error;
 			this.minecraft.execute(() -> {
 				this.checking = false;
 				this.items = result;
@@ -88,6 +88,13 @@ public class UpdatesScreen extends DownloadScreen<UpdatesScreen.Item> {
 				if (result != null) {
 					// Updates start picked; Vanilla Tweaks re-downloads are up to the player
 					result.stream().filter(item -> item.status() == Status.UPDATE).forEach(item -> this.selected.put(item.fileName(), item));
+					// The Updates button's count now matches what this check found
+					Settings settings = Settings.get();
+					int updates = (int) result.stream().filter(item -> item.status() == Status.UPDATE).count();
+					if (settings.knownPackUpdates != updates) {
+						settings.knownPackUpdates = updates;
+						settings.save();
+					}
 				}
 				this.refreshIfShown();
 			});
@@ -186,9 +193,11 @@ public class UpdatesScreen extends DownloadScreen<UpdatesScreen.Item> {
 	@Override
 	protected void fillPackList(final PackList list) {
 		if (this.items == null) {
-			list.addText(this.checkError != null
-				? Component.translatable("tweakswitch.loadFailed", this.checkError).withStyle(ChatFormatting.RED)
-				: Component.translatable("tweakswitch.updates.checking").withStyle(ChatFormatting.GRAY));
+			if (this.checkError != null && !this.checking) {
+				this.addError(list, this.checkError, this::check);
+			} else {
+				list.addText(Component.translatable("tweakswitch.updates.checking").withStyle(ChatFormatting.GRAY));
+			}
 			return;
 		}
 		if (this.items.isEmpty()) {
@@ -246,7 +255,7 @@ public class UpdatesScreen extends DownloadScreen<UpdatesScreen.Item> {
 	@Override
 	protected PackIndex.Entry indexEntry(final Item item) {
 		if (item.vanillaTweaks() != null) {
-			return new PackIndex.Entry(item.vanillaTweaks().category(), PackIndex.VANILLA_TWEAKS, item.vanillaTweaks().id());
+			return new PackIndex.Entry(item.vanillaTweaks().category(), PackIndex.VANILLA_TWEAKS, item.vanillaTweaks().id()).withConflicts(item.vanillaTweaks().incompatible());
 		}
 		String category = item.entry() != null ? item.entry().category() : "Modrinth";
 		return new PackIndex.Entry(category, PackIndex.MODRINTH, item.latest() != null ? item.latest().projectId() : null);

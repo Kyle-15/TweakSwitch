@@ -11,8 +11,8 @@ import org.jspecify.annotations.Nullable;
 
 /** A Modrinth project as a card, like on modrinth.com: icon, title and author, summary, download count and tags. */
 public class ProjectCard extends CardButton {
-	public static final int HEIGHT = 32;
-	private static final int ICON_SIZE = 24;
+	/** 24 pixels in Compact; Normal's taller card has room for 30. */
+	private final int iconSize = Ui.normal() ? 30 : 24;
 
 	private final String title;
 	private final String author;
@@ -23,12 +23,25 @@ public class ProjectCard extends CardButton {
 	private final BooleanSupplier picked;
 	private final boolean downloaded;
 	private final boolean needsMods;
+	/** True once a lookup found the project has no file for this Minecraft version; its card says so. */
+	private boolean unavailable;
+
+	public ProjectCard unavailable(final boolean unavailable) {
+		this.unavailable = unavailable;
+		return this;
+	}
+
+	@Override
+	protected @Nullable Component narratedState() {
+		return this.downloaded ? Component.translatable("tweakswitch.narration.downloaded")
+			: this.picked.getAsBoolean() ? Component.translatable("tweakswitch.narration.picked") : null;
+	}
 
 	public ProjectCard(
 		final Theme theme, final String title, final String author, final String summary, final String downloads, final List<String> tags,
 		final Supplier<@Nullable Identifier> icon, final BooleanSupplier picked, final boolean downloaded, final boolean needsMods, final Runnable toggle
 	) {
-		super(theme, HEIGHT, Component.literal(title), toggle);
+		super(theme, Ui.card(), Component.literal(title), toggle);
 		this.title = title;
 		this.author = author;
 		this.summary = summary;
@@ -52,6 +65,7 @@ public class ProjectCard extends CardButton {
 			isPicked ? this.theme.cardSelected() : hovered ? this.theme.cardHover() : this.theme.card(),
 			isPicked ? this.theme.accent() : hovered ? this.theme.border() : this.theme.card());
 
+		final int ICON_SIZE = this.iconSize;
 		int iconX = x + 4;
 		int iconY = y + 3;
 		Draw.roundRect(graphics, iconX, iconY, ICON_SIZE, ICON_SIZE, 4, this.theme.off());
@@ -61,17 +75,18 @@ public class ProjectCard extends CardButton {
 		}
 
 		int textX = iconX + ICON_SIZE + 6;
-		int lineOne = y + 4;
-		int lineTwo = y + 16;
+		int lineOne = y + (Ui.normal() ? 6 : 4);
+		int lineTwo = y + (Ui.normal() ? 20 : 16);
 
 		// Right of line one: a state badge, or else the download count
-		String badge = this.downloaded ? "✔ Installed" : isPicked ? "✚ Picked" : null;
+		String badge = this.downloaded ? "✔ Installed" : isPicked ? "✚ Picked" : this.unavailable ? "✘ No file" : null;
 		int rightOne;
 		if (badge != null) {
 			int badgeWidth = font.width(badge) + 8;
 			rightOne = x + width - badgeWidth - 5;
-			Draw.roundRect(graphics, rightOne, lineOne - 2, badgeWidth, 11, 5, this.downloaded ? this.theme.off() : this.theme.accent());
-			graphics.text(font, badge, rightOne + 4, lineOne, this.downloaded ? this.theme.muted() : this.theme.onAccent(), false);
+			boolean quiet = this.downloaded || !isPicked;
+			Draw.roundRect(graphics, rightOne, lineOne - 2, badgeWidth, 11, 5, quiet ? this.theme.off() : this.theme.accent());
+			graphics.text(font, badge, rightOne + 4, lineOne, quiet ? this.theme.muted() : this.theme.onAccent(), false);
 		} else {
 			String count = "⬇ " + this.downloads;
 			rightOne = x + width - font.width(count) - 6;

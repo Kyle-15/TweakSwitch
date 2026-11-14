@@ -1,0 +1,33 @@
+{
+	"hits": [
+		{
+			"project_id": "50dA9Sha",
+			"project_type": "resourcepack",
+			"slug": "fresh-animations",
+			"author": "FreshLX",
+			"title": "Fresh Animations",
+			"description": "Animated mobs.",
+			"categories": ["entities", "models", "vanilla-like", "minecraft"],
+			"display_categories": ["entities", "vanilla-like", "minecraft"],
+			"downloads": 51568648,
+			"icon_url": "https://cdn.modrinth.com/data/50dA9Sha/icon.png",
+			"gallery": ["https://cdn.modrinth.com/a.png", "https://cdn.modrinth.com/b.png"],
+			"featured_gallery": "https://cdn.modrinth.com/b.png"
+		},
+		{
+			"project_id": "AbCd1234",
+			"project_type": "mod",
+			"slug": "terralith",
+			"author": "Starmute",
+			"title": "Terralith",
+			"description": null,
+			"display_categories": ["datapack", "fabric", "forge", "worldgen"],
+			"icon_url": null,
+			"gallery": [],
+			"featured_gallery": null
+		}
+	],
+	"offset": 0,
+	"limit": 30,
+	"total_hits": 5488
+}
