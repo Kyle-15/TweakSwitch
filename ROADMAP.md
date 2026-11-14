@@ -20,6 +20,7 @@ Ideas for future versions, roughly in the order they'd help most. Tick them off 
 
 ## Done
 
+- [x] **Uploads to Modrinth and CurseForge** when a GitHub release is published, from the jars attached to it. Descriptions and gallery pictures are still set by hand (1.5.0)
 - [x] **Previews on by default,** so the hover info (what a pack does, what it clashes with) shows without knowing about Shift. Anyone upgrading gets them switched on once; turning them off after that sticks (1.5.0)
 - [x] **Clickable "⇧ Preview" button** in the header, as well as Shift (1.5.0)
 - [x] **"Tap Shift for pack info" line** while previews are off (1.5.0)

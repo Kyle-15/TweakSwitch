@@ -61,6 +61,8 @@ Two kinds of tests:
 - `./gradlew test -Pmc=26.3` runs the unit tests (the Vanilla Tweaks and Modrinth readers, retry delays, presets, exports). They need no internet and run as part of every build. GitHub Actions builds every version and runs them on each push (`.github/workflows/build.yml`).
 - `./gradlew runClientGameTest -Pmc=26.2` runs the in-game screenshot test on that version. It downloads real packs, so it needs internet, and it only runs on your own machine.
 
+Publishing a GitHub release uploads its jars to Modrinth and CurseForge (`.github/workflows/publish.yml` runs `scripts/publish.py`). Each jar is listed under the game versions in `publish_versions` in its `versions/<mc>.properties`, and the release notes up to the "Which jar do I need?" heading become the changelog. The two sites' tokens are repository secrets, `MODRINTH_TOKEN` and `CURSEFORGE_TOKEN`; a site without its secret is skipped. `scripts/publish.py --dry-run` shows what would be sent without uploading.
+
 ## Network use
 
 TweakSwitch goes online when you open its download or update screens, when you ask it to download something again (a damaged pack, or packs named in an imported list), and for two start-up checks you can switch off:

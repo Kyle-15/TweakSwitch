@@ -1,0 +1,73 @@
+# Uploads a release's jars to Modrinth and CurseForge.
+#
+# Runs by itself when a GitHub release is published. It uploads the jars attached to that release (the ones that were
+# tested), listed under the game versions in versions/<mc>.properties, with the release notes as the changelog.
+#
+# It can also be run by hand from the Actions tab, for one jar or one site, and as a dry run that uploads nothing.
+#
+# Needs two repository secrets (Settings > Secrets and variables > Actions): MODRINTH_TOKEN and CURSEFORGE_TOKEN.
+# A site whose secret is missing is skipped.
+name: Publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to upload, like v1.5.0"
+        required: true
+      only:
+        description: "Just one jar, by its suffix (26.3, 1.21.10, ...). Empty for all."
+        required: false
+        default: ""
+      sites:
+        description: "Which sites"
+        type: choice
+        options: ["modrinth,curseforge", "modrinth", "curseforge"]
+        default: "modrinth,curseforge"
+      dry_run:
+        description: "Dry run: check everything, upload nothing"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+# Never two uploads of the same release at once
+concurrency:
+  group: publish-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Upload to Modrinth and CurseForge
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get the release's jars and notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          mkdir jars
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern 'tweakswitch-*.jar' --dir jars
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > notes.md
+          ls -l jars
+
+      - name: Upload
+        env:
+          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+          CURSEFORGE_TOKEN: ${{ secrets.CURSEFORGE_TOKEN }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          ONLY: ${{ inputs.only }}
+          SITES: ${{ inputs.sites || 'modrinth,curseforge' }}
+          # A published release uploads for real; a run by hand is a dry run unless the box is unticked
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: |
+          set -o pipefail
+          set -- --tag "$TAG" --jars jars --changelog-file notes.md --sites "$SITES"
+          if [ -n "$ONLY" ]; then set -- "$@" --only "$ONLY"; fi
+          if [ "$DRY_RUN" = "true" ]; then set -- "$@" --dry-run; fi
+          python3 scripts/publish.py "$@" | tee -a "$GITHUB_STEP_SUMMARY"
