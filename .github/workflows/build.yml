@@ -1,0 +1,80 @@
+# Builds TweakSwitch for every supported Minecraft version and runs the unit tests, on each push and pull request.
+# When a release is published, the built jars are attached to it (ones already attached by hand are left alone).
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Minecraft ${{ matrix.mc }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # One jar per version family; 1.21.10's jar also covers 1.21.9, and 26.1's covers 26.1.1 and 26.1.2
+        mc: ["1.21.10", "1.21.11", "26.1", "26.2", "26.3"]
+    steps:
+      - uses: actions/checkout@v4
+
+      # Gradle runs on Java 25; 1.21 is compiled for Java 21 by the same compiler
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build and run unit tests
+        run: ./gradlew build -Pmc=${{ matrix.mc }} --no-daemon --console=plain
+
+      - name: Keep the test report if a test failed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-${{ matrix.mc }}
+          path: build/reports/tests/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tweakswitch-${{ matrix.mc }}
+          path: build/libs/tweakswitch-*+${{ matrix.mc }}.jar
+          if-no-files-found: error
+
+  attach:
+    name: Attach jars to the release
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: tweakswitch-*
+          path: jars
+          merge-multiple: true
+
+      - name: Upload jars the release doesn't have yet
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          have="$(gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name')"
+          for jar in jars/*.jar; do
+            name="$(basename "$jar")"
+            if printf '%s\n' "$have" | grep -qxF "$name"; then
+              echo "$name is already attached"
+            else
+              gh release upload "$TAG" "$jar" --repo "$REPO"
+            fi
+          done
