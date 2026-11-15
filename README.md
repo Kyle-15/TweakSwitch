@@ -63,6 +63,8 @@ Two kinds of tests:
 
 Publishing a GitHub release uploads its jars to Modrinth and CurseForge (`.github/workflows/publish.yml` runs `scripts/publish.py`). Each jar is listed under the game versions in `publish_versions` in its `versions/<mc>.properties`, and the release notes up to the "Which jar do I need?" heading become the changelog. The two sites' tokens are repository secrets, `MODRINTH_TOKEN` and `CURSEFORGE_TOKEN`; a site without its secret is skipped. `scripts/publish.py --dry-run` shows what would be sent without uploading.
 
+Before changing code or releasing, read [MAINTAINING.md](MAINTAINING.md): the rules that keep it working across six Minecraft versions, each with the mistake that taught it.
+
 ## Network use
 
 TweakSwitch goes online when you open its download or update screens, when you ask it to download something again (a damaged pack, or packs named in an imported list), and for two start-up checks you can switch off:
