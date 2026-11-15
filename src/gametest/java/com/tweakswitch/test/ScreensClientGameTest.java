@@ -572,6 +572,59 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 			((Map<String, Boolean>) field(TweakSwitchScreen.class, Compat.screen(minecraft), "pending")).clear();
 		});
 
+		// Real mouse clicks on a switch: left flips it and opens no menu, right opens the menu, and a left click on
+		// "Pin to Top" pins it. (26.3 numbers the buttons differently, which once made every left click open the menu.)
+		context.waitTicks(3);
+		AbstractWidget clickRow = context.computeOnClient(minecraft -> ((Map<AbstractWidget, Pack>) field(TweakSwitchScreen.class, Compat.screen(minecraft), "switchRows"))
+			.entrySet().stream().filter(entry -> entry.getValue().getId().equals("tweakswitch/crystal-base.zip")).findFirst().orElseThrow().getKey());
+		double rowX = clickRow.getX() + clickRow.getWidth() - 16;
+		double rowY = clickRow.getY() + clickRow.getHeight() / 2.0;
+		clickAt(context, rowX, rowY);
+		context.waitTicks(3);
+		Object[] afterLeft = context.computeOnClient(minecraft -> new Object[] {
+			((Map<String, Boolean>) field(TweakSwitchScreen.class, Compat.screen(minecraft), "pending")).get("tweakswitch/crystal-base.zip"),
+			field(TweakSwitchScreen.class, Compat.screen(minecraft), "menu")
+		});
+		if (!Boolean.TRUE.equals(afterLeft[0]) || afterLeft[1] != null) {
+			throw new AssertionError("A left click on a switch should flip it and open no menu: switched on = " + afterLeft[0] + ", menu = " + afterLeft[1]);
+		}
+		context.takeScreenshot("tweakswitch-left-click-toggles");
+		clickAt(context, rowX - 60, rowY, InputConstants.MOUSE_BUTTON_RIGHT);
+		context.waitTicks(3);
+		Object[] afterRight = context.computeOnClient(minecraft -> new Object[] {
+			((Map<String, Boolean>) field(TweakSwitchScreen.class, Compat.screen(minecraft), "pending")).get("tweakswitch/crystal-base.zip"),
+			field(TweakSwitchScreen.class, Compat.screen(minecraft), "menu")
+		});
+		if (afterRight[1] == null || !Boolean.TRUE.equals(afterRight[0])) {
+			throw new AssertionError("A right click on a switch should open its menu and leave the switch alone: switched on = " + afterRight[0] + ", menu = " + afterRight[1]);
+		}
+		context.takeScreenshot("tweakswitch-right-click-menu");
+		// The menu's first line is "Pin to Top"
+		int[] menuSpot = context.computeOnClient(minecraft -> {
+			Object menu = field(TweakSwitchScreen.class, Compat.screen(minecraft), "menu");
+			try {
+				Method x = menu.getClass().getDeclaredMethod("x");
+				Method y = menu.getClass().getDeclaredMethod("y");
+				x.setAccessible(true);
+				y.setAccessible(true);
+				return new int[] {(int) x.invoke(menu) + 20, (int) y.invoke(menu) + 9};
+			} catch (ReflectiveOperationException e) {
+				throw new RuntimeException(e);
+			}
+		});
+		clickAt(context, menuSpot[0], menuSpot[1]);
+		context.waitTicks(3);
+		if (!Settings.get().pinned.contains("crystal-base.zip")) {
+			throw new AssertionError("A left click on the menu's \"Pin to Top\" should pin the pack");
+		}
+		context.runOnClient(minecraft -> {
+			Settings.get().pinned.remove("crystal-base.zip");
+			Settings.get().save();
+			((Map<String, Boolean>) field(TweakSwitchScreen.class, Compat.screen(minecraft), "pending")).clear();
+			refresh(minecraft);
+		});
+		context.waitTicks(3);
+
 		// Keyboard: Tab reaches the switches (a white ring shows which), and Enter flips the focused one
 		context.getInput().setCursorPos(0, 0);
 		Pack focusedPack = null;
@@ -894,6 +947,14 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 
 	/** Moves the cursor to a GUI position and left-clicks there. */
 	private static void clickAt(final ClientGameTestContext context, final double guiX, final double guiY) {
+		clickAt(context, guiX, guiY, InputConstants.MOUSE_BUTTON_LEFT);
+	}
+
+	/**
+	 * Moves the cursor to a GUI position and clicks there with a real mouse press, through the game's own input handling.
+	 * The button is one of the game's constants: their numbers differ between versions (26.3's left button is 1, not 0).
+	 */
+	private static void clickAt(final ClientGameTestContext context, final double guiX, final double guiY, final int button) {
 		context.getInput().setCursorPos(100, 100);
 		context.waitTick();
 		double[] perGuiUnit = context.computeOnClient(minecraft -> new double[] {
@@ -902,7 +963,7 @@ public class ScreensClientGameTest implements FabricClientGameTest {
 		});
 		context.getInput().setCursorPos(guiX * perGuiUnit[0], guiY * perGuiUnit[1]);
 		context.waitTick();
-		context.getInput().pressMouse(0);
+		context.getInput().pressMouse(button);
 		context.waitTick();
 	}
 

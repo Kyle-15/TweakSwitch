@@ -743,12 +743,13 @@ public class TweakSwitchScreen extends PackListScreen {
 			int item = this.menu.itemAt(event.x(), event.y());
 			Menu open = this.menu;
 			this.menu = null;
-			if (item >= 0 && event.button() == 0) {
+			if (item >= 0 && event.button() == InputConstants.MOUSE_BUTTON_LEFT) {
 				open.items().get(item).action().run();
 			}
 			return true;
 		}
-		if (event.button() == 1) {
+		// The game's own constant, never a bare number: 26.3 renumbered the mouse buttons, and "1" is its left button
+		if (event.button() == InputConstants.MOUSE_BUTTON_RIGHT) {
 			Pack pack = this.switchRows.get(this.hoveredListWidget(event.x(), event.y()));
 			if (pack != null) {
 				this.openMenu(pack, (int) event.x(), (int) event.y());
@@ -758,7 +759,7 @@ public class TweakSwitchScreen extends PackListScreen {
 		return super.mouseClicked(event, doubleClick);
 	}
 
-	/** With a switch focused by keyboard: Delete removes the pack, P pins it, and the Menu key opens its menu. Esc closes the menu. */
+	/** With a switch focused by keyboard: Delete removes the pack, P pins it, and Shift+F10 opens its menu. Any key closes the menu. */
 	@Override
 	public boolean keyPressed(final KeyEvent event) {
 		if (this.menu != null) {
@@ -775,8 +776,8 @@ public class TweakSwitchScreen extends PackListScreen {
 				this.togglePin(focused);
 				return true;
 			}
-			if (event.key() == 348) {
-				// GLFW's Menu key
+			if (event.key() == InputConstants.KEY_F10 && event.hasShiftDown()) {
+				// The usual keyboard way to a right-click menu
 				AbstractWidget widget = this.focusedListWidget();
 				this.openMenu(focused, widget.getX() + 20, widget.getY() + widget.getHeight());
 				return true;

@@ -286,7 +286,8 @@ public abstract class PackListScreen extends BridgeScreen {
 	@Override
 	public boolean mouseClicked(final MouseButtonEvent event, final boolean doubleClick) {
 		this.shiftTapped = false;
-		if (event.button() == 0 && this.hasPreviews() && (inside(this.previewButtonBounds, event.x(), event.y()) || inside(this.shiftHintBounds, event.x(), event.y()))) {
+		// Button numbers come from the game's own constants: 26.3 renumbered them (left is 1 there, not 0)
+		if (event.button() == InputConstants.MOUSE_BUTTON_LEFT && this.hasPreviews() && (inside(this.previewButtonBounds, event.x(), event.y()) || inside(this.shiftHintBounds, event.x(), event.y()))) {
 			togglePreviews();
 			this.minecraft.getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
 			return true;
